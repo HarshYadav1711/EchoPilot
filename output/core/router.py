@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from core.execution_context import ExecutionContext
 from core.executor import dispatch_intent_step, execute_action_plan
 from core.memory import append_executed_actions
@@ -20,20 +22,22 @@ def compile_action_plan(analysis: IntentAnalysis) -> ActionPlan:
     """
     Build an ordered execution plan from validated sub_intents.
 
-    Each step carries a copy of shared ``arguments`` for the tools layer (future execution).
+    Steps run **sequentially**; for two-clause compounds, ``per_step_arguments`` merges
+    into each step so tools (e.g. summarize → create_file) see the right clause and handoff
+    via ``ExecutionContext.accumulated`` (e.g. ``summary_text``).
     """
     steps: list[ActionPlanStep] = []
-    shared = dict(analysis.arguments)
     for i, intent in enumerate(analysis.sub_intents, start=1):
+        merged = analysis.effective_arguments_for_step(i)
         route = _INTENT_TOOL_ROUTE.get(intent, "tools.chat.reply")
-        desc = _step_description(intent, shared)
+        desc = _step_description(intent, merged)
         steps.append(
             ActionPlanStep(
                 order=i,
                 intent=intent,
                 tool_route=route,
                 description=desc,
-                params=shared,
+                params=merged,
             )
         )
     return ActionPlan(
@@ -100,6 +104,7 @@ class IntentRouter:
                 confirm_writes=False,
                 allow_overwrite=False,
             )
-        first = plan.steps[0].intent
-        label = plan.steps[0].tool_route
-        return label, dispatch_intent_step(first, analysis, ctx)
+        step0 = plan.steps[0]
+        eff = replace(analysis, arguments=analysis.effective_arguments_for_step(step0.order))
+        label = step0.tool_route
+        return label, dispatch_intent_step(step0.intent, eff, ctx)

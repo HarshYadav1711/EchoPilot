@@ -10,6 +10,30 @@ from utils.logger import get_logger
 logger = get_logger("intent")
 
 
+_COMPOUND_SPLIT = " and "
+
+
+def try_split_compound_two(user_text: str) -> tuple[str, str] | None:
+    """
+    Detect a simple two-clause command joined by `` and `` (spaces required).
+
+    Splits on the **first** occurrence only so the right clause may still contain ``and``.
+    Returns None if there is no split or either side is empty.
+    """
+    t = (user_text or "").strip()
+    if not t:
+        return None
+    lower = t.lower()
+    idx = lower.find(_COMPOUND_SPLIT)
+    if idx == -1:
+        return None
+    left = t[:idx].strip()
+    right = t[idx + len(_COMPOUND_SPLIT) :].strip()
+    if not left or not right:
+        return None
+    return (left, right)
+
+
 def apply_requires_user_confirmation(analysis: IntentAnalysis, *, min_confidence: float) -> bool:
     """
     When True, the UI must not run Apply immediately — user confirms first (low-confidence guard).
@@ -57,6 +81,62 @@ def _fallback_analysis(reason: str, raw_llm_text: str | None = None) -> IntentAn
         explanation_for_ui="Classification unavailable; using safe general-chat fallback.",
         parse_warnings=[reason],
         raw_llm_text=raw_llm_text,
+        compound_parts=[],
+        per_step_arguments=None,
+    )
+
+
+def _per_segment_arguments(intent: PrimaryIntent, segment_text: str, model_args: dict) -> dict:
+    """Prefer model args; pin clause text for summarize / chat so tools do not see the full compound."""
+    args = dict(model_args)
+    seg = segment_text.strip()
+    if intent == PrimaryIntent.SUMMARIZE:
+        args["text"] = seg
+    elif intent == PrimaryIntent.GENERAL_CHAT:
+        args.setdefault("query", seg)
+    return args
+
+
+def _merge_compound_two(
+    left_text: str,
+    right_text: str,
+    left: IntentAnalysis,
+    right: IntentAnalysis,
+) -> IntentAnalysis:
+    la = left.sub_intents[0] if left.sub_intents else left.primary_intent
+    rb = right.sub_intents[0] if right.sub_intents else right.primary_intent
+    sub_intents = [la, rb]
+    per_step_arguments = [
+        _per_segment_arguments(la, left_text, left.arguments),
+        _per_segment_arguments(rb, right_text, right.arguments),
+    ]
+    merged_flat = {**left.arguments, **right.arguments}
+    confidence = min(left.confidence, right.confidence)
+    requires_confirmation = left.requires_confirmation or right.requires_confirmation
+    parse_warnings: list[str] = []
+    parse_warnings.extend(f"compound_left:{w}" for w in left.parse_warnings)
+    parse_warnings.extend(f"compound_right:{w}" for w in right.parse_warnings)
+    explanation = (
+        f"Two-part request (in order): (1) {left.explanation_for_ui} "
+        f"(2) {right.explanation_for_ui}"
+    )
+    raw: str | None = None
+    if left.raw_llm_text or right.raw_llm_text:
+        raw = (
+            f"--- clause 1 ---\n{left.raw_llm_text or ''}\n"
+            f"--- clause 2 ---\n{right.raw_llm_text or ''}"
+        )
+    return IntentAnalysis(
+        primary_intent=la,
+        sub_intents=sub_intents,
+        arguments=merged_flat,
+        confidence=confidence,
+        requires_confirmation=requires_confirmation,
+        explanation_for_ui=explanation[:2000],
+        parse_warnings=parse_warnings,
+        raw_llm_text=raw,
+        compound_parts=[left_text.strip(), right_text.strip()],
+        per_step_arguments=per_step_arguments,
     )
 
 
@@ -71,6 +151,17 @@ class IntentClassifier:
         if not text:
             return _fallback_analysis("empty_user_text")
 
+        pair = try_split_compound_two(text)
+        if pair is not None:
+            left_t, right_t = pair
+            left_a = self._analyze_once(left_t)
+            right_a = self._analyze_once(right_t)
+            return _merge_compound_two(left_t, right_t, left_a, right_a)
+
+        return self._analyze_once(text)
+
+    def _analyze_once(self, text: str) -> IntentAnalysis:
+        """Single LLM intent classification for one user clause (used alone or as one side of a compound)."""
         raw: str | None = None
         try:
             from ollama import Client
@@ -122,6 +213,8 @@ class IntentClassifier:
             explanation_for_ui=expl,
             parse_warnings=parse_warnings,
             raw_llm_text=str(raw)[:4000],
+            compound_parts=[],
+            per_step_arguments=None,
         )
 
 

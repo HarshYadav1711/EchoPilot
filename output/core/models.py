@@ -91,10 +91,24 @@ class IntentAnalysis:
     explanation_for_ui: str
     parse_warnings: List[str] = field(default_factory=list)
     raw_llm_text: Optional[str] = None
+    # Simple two-clause "X and Y" compounds: raw segments for UI; per-step arg overrides for tools.
+    compound_parts: List[str] = field(default_factory=list)
+    per_step_arguments: Optional[List[Dict[str, Any]]] = None
 
     @property
     def primary_intent_value(self) -> str:
         return self.primary_intent.value
+
+    def effective_arguments_for_step(self, order_1based: int) -> Dict[str, Any]:
+        """Merge shared ``arguments`` with overrides for this plan step (1-based order)."""
+        base = dict(self.arguments)
+        ps = self.per_step_arguments
+        if ps and 1 <= order_1based <= len(ps):
+            base = {**base, **ps[order_1based - 1]}
+        return base
+
+    def is_compound_two_part(self) -> bool:
+        return len(self.compound_parts) == 2
 
 
 @dataclass

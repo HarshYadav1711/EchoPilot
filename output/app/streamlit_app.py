@@ -228,7 +228,19 @@ def main() -> None:
             st.progress(min(1.0, max(0.0, an.confidence)))
             st.caption(f"{an.confidence:.0%} · model threshold {_CONF_THRESHOLD:.0%}")
 
-            st.markdown("**Planned actions**")
+            if an.is_compound_two_part():
+                st.markdown("**Compound command**")
+                st.caption("Detected two clauses joined by “and”; each is classified separately, then run in order.")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**1 · First clause**")
+                    st.write(an.compound_parts[0])
+                with c2:
+                    st.markdown("**2 · Second clause**")
+                    st.write(an.compound_parts[1])
+
+            st.markdown("**Planned actions (execution order)**")
+            st.caption("Steps run top to bottom; later steps can use outputs from earlier ones (e.g. summary → file).")
             if not pl.steps:
                 _empty_card("No steps in this plan.")
             else:
@@ -243,14 +255,17 @@ def main() -> None:
                 st.warning("Parser / model notes: " + "; ".join(an.parse_warnings))
 
             with st.expander("Technical details (intent JSON)", expanded=False):
-                st.json(
-                    {
-                        "sub_intents": [s.value for s in an.sub_intents],
-                        "arguments": an.arguments,
-                        "requires_confirmation": an.requires_confirmation,
-                        "parse_warnings": an.parse_warnings,
-                    }
-                )
+                detail: dict = {
+                    "sub_intents": [s.value for s in an.sub_intents],
+                    "arguments": an.arguments,
+                    "requires_confirmation": an.requires_confirmation,
+                    "parse_warnings": an.parse_warnings,
+                }
+                if an.compound_parts:
+                    detail["compound_parts"] = an.compound_parts
+                if an.per_step_arguments:
+                    detail["per_step_arguments"] = an.per_step_arguments
+                st.json(detail)
             if an.raw_llm_text:
                 with st.expander("Raw model output", expanded=False):
                     st.code(an.raw_llm_text, language="json")

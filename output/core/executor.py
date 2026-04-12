@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from core.execution_context import ExecutionContext
@@ -66,7 +67,8 @@ def execute_action_plan(
     for step in plan.steps:
         r: ToolResult
         try:
-            r = dispatch_intent_step(step.intent, analysis, ctx)
+            eff = replace(analysis, arguments=analysis.effective_arguments_for_step(step.order))
+            r = dispatch_intent_step(step.intent, eff, ctx)
         except Exception as exc:
             logger.exception("Unhandled tool error step=%s", step.order)
             r = ToolResult(ok=False, message=f"Internal error: {exc!s}")
