@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from core.config import get_settings
-from core.models import IntentResult, ToolResult
+from core.models import IntentAnalysis, ToolResult
 from utils.logger import get_logger
 
 logger = get_logger("tools.file_ops")
 
 
-def read_safe(intent: IntentResult) -> ToolResult:
+def read_safe(intent: IntentAnalysis) -> ToolResult:
     """Read a file under the data sandbox. Implementation to follow."""
     raise NotImplementedError("file_ops.read_safe deferred to implementation stage.")
 
 
-def write_safe(intent: IntentResult) -> ToolResult:
+def write_safe(intent: IntentAnalysis) -> ToolResult:
     """
     Write a file under the data sandbox.
 

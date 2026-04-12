@@ -23,9 +23,9 @@ class SessionMemory:
         """Record a completed pipeline result."""
         self.entries.append(
             {
-                "intent": result.intent.name.value,
-                "action": result.action_label,
-                "ok": result.tool.ok,
+                "primary_intent": result.intent_analysis.primary_intent.value,
+                "requires_confirmation": result.action_plan.requires_confirmation,
+                "steps": [s.tool_route for s in result.action_plan.steps],
             }
         )
         if len(self.entries) > self.max_entries:

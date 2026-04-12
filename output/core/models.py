@@ -7,15 +7,13 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
-class IntentName(str, Enum):
-    """Canonical intent labels produced by the local classifier (extend as needed)."""
+class PrimaryIntent(str, Enum):
+    """Allowed intent labels (must match LLM JSON contract)."""
 
-    UNKNOWN = "unknown"
-    CHAT = "chat"
+    CREATE_FILE = "create_file"
+    WRITE_CODE = "write_code"
     SUMMARIZE = "summarize"
-    FILE_READ = "file_read"
-    FILE_WRITE = "file_write"
-    CODE_GENERATE = "code_generate"
+    GENERAL_CHAT = "general_chat"
 
 
 class TranscriptionSource(str, Enum):
@@ -78,11 +76,45 @@ class TranscriptionResult:
 
 
 @dataclass
-class IntentResult:
-    name: IntentName
+class IntentAnalysis:
+    """
+    Validated structured output from the intent layer (Ollama JSON).
+
+    ``parse_warnings`` records recovery steps (e.g. invalid JSON repaired, confidence adjusted).
+    """
+
+    primary_intent: PrimaryIntent
+    sub_intents: List[PrimaryIntent]
+    arguments: Dict[str, Any]
     confidence: float
-    slots: Dict[str, Any] = field(default_factory=dict)
-    raw_llm: Optional[str] = None
+    requires_confirmation: bool
+    explanation_for_ui: str
+    parse_warnings: List[str] = field(default_factory=list)
+    raw_llm_text: Optional[str] = None
+
+    @property
+    def primary_intent_value(self) -> str:
+        return self.primary_intent.value
+
+
+@dataclass
+class ActionPlanStep:
+    """One ordered step in a safe local execution plan."""
+
+    order: int
+    intent: PrimaryIntent
+    tool_route: str
+    description: str
+    params: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ActionPlan:
+    """Ordered plan derived from ``IntentAnalysis`` (display and future executor)."""
+
+    steps: List[ActionPlanStep]
+    requires_confirmation: bool
+    explanation_for_ui: str
 
 
 @dataclass
@@ -94,9 +126,8 @@ class ToolResult:
 
 @dataclass
 class PipelineResult:
-    """Aggregate result for UI: transcription → intent → tool → summary."""
+    """Aggregate result for UI: transcription → intent → action plan."""
 
     transcription: TranscriptionResult
-    intent: IntentResult
-    action_label: str
-    tool: ToolResult
+    intent_analysis: IntentAnalysis
+    action_plan: ActionPlan

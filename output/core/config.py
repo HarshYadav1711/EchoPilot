@@ -58,6 +58,13 @@ class Settings:
     whisper_vad_filter: bool = field(default_factory=lambda: _env_bool("WHISPER_VAD_FILTER", True))
     whisper_min_duration_s: float = field(default_factory=lambda: _env_float("WHISPER_MIN_DURATION_S", 0.25))
     whisper_silence_peak: float = field(default_factory=lambda: _env_float("WHISPER_SILENCE_PEAK", 1.0 / 32768.0))
+    # Intent layer (Ollama JSON)
+    intent_confidence_threshold: float = field(
+        default_factory=lambda: _env_float("INTENT_CONFIDENCE_THRESHOLD", 0.55)
+    )
+    ollama_intent_temperature: float = field(
+        default_factory=lambda: _env_float("OLLAMA_INTENT_TEMPERATURE", 0.1)
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "data_dir", self.project_root / "output")
