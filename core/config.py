@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def _project_root() -> Path:
-    """Directory containing this package's parent (the `output` project root)."""
+    """EchoPilot repository root (parent of the ``core`` package)."""
     return Path(__file__).resolve().parent.parent
 
 

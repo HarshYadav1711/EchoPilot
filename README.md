@@ -21,7 +21,7 @@ Trade-off: you install models and accept local CPU/GPU limits instead of outsour
 **Install**
 
 ```bash
-cd output
+cd <repository_root>
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 # source .venv/bin/activate     # Linux/macOS
@@ -87,7 +87,7 @@ If both are provided, the UI prefers the microphone clip and notes that in warni
 
 ## Where writes go (sandbox)
 
-- Config resolves **`data_dir`** to **`<project_root>/output`** (i.e. this repo’s `output/output/` directory when `project_root` is the `output` package folder).
+- Config resolves **`data_dir`** to **`<project_root>/output`** (runtime-generated files and sandbox writes only; source code lives beside this folder at the repo root).
 - **All user-driven file creation** goes through `utils/file_sanitizer.py`: single filename segment, allowlisted extension, no `..`, no absolute paths, no subdirectories in the user string.
 - **`utils/safety.ensure_within_root`** is used when resolving paths so resolved paths cannot sit outside `data_dir`.
 - **Dry-run** executes tools without calling `Path.write_bytes` for real; **confirmation checkboxes** gate real writes.

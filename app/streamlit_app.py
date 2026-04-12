@@ -1,7 +1,7 @@
 """
 EchoPilot Streamlit entrypoint — full pipeline: input → reasoning → execution → timeline.
 
-Run from the project root (`output/`):
+Run from the repository root:
   streamlit run app/streamlit_app.py
 """
 
