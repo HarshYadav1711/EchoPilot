@@ -62,6 +62,10 @@ class Settings:
     intent_confidence_threshold: float = field(
         default_factory=lambda: _env_float("INTENT_CONFIDENCE_THRESHOLD", 0.55)
     )
+    # Apply (non–dry-run): below this confidence, Streamlit shows Confirm/Cancel before executing.
+    execution_confidence_threshold: float = field(
+        default_factory=lambda: _env_float("EXECUTION_CONFIDENCE_THRESHOLD", 0.6)
+    )
     ollama_intent_temperature: float = field(
         default_factory=lambda: _env_float("OLLAMA_INTENT_TEMPERATURE", 0.1)
     )

@@ -29,7 +29,7 @@ from app.ui_helpers import (  # noqa: E402
     write_apply_allowed,
 )
 from core.config import get_settings  # noqa: E402
-from core.intent import IntentClassifier  # noqa: E402
+from core.intent import IntentClassifier, apply_requires_user_confirmation  # noqa: E402
 from core.models import PipelineResult, TranscriptionSource  # noqa: E402
 from core.router import IntentRouter  # noqa: E402
 from core.stt import SpeechTranscriber  # noqa: E402
@@ -41,6 +41,7 @@ _TRANSCRIBER = SpeechTranscriber(_SETTINGS)
 _CLASSIFIER = IntentClassifier(_SETTINGS)
 _ROUTER = IntentRouter()
 _CONF_THRESHOLD = _SETTINGS.intent_confidence_threshold
+_EXEC_CONF_THRESHOLD = _SETTINGS.execution_confidence_threshold
 
 
 def _empty_card(message: str) -> None:
@@ -67,7 +68,12 @@ def main() -> None:
     with h2:
         if st.button("Reset session", use_container_width=True, help="Clear transcript, plan, previews, and timeline"):
             reset_ep_session()
-            for k in ("ep_intent_ack", "ep_confirm_writes", "ep_allow_overwrite"):
+            for k in (
+                "ep_intent_ack",
+                "ep_confirm_writes",
+                "ep_allow_overwrite",
+                "ep_await_exec_low_conf",
+            ):
                 st.session_state.pop(k, None)
             st.rerun()
 
@@ -132,6 +138,7 @@ def main() -> None:
             st.session_state["last_stt"] = tx
             st.session_state.pop("echo_pipeline", None)
             st.session_state.pop("ep_last_preview", None)
+            st.session_state.pop("ep_await_exec_low_conf", None)
 
             if not tx.ok or not (tx.text or "").strip():
                 append_timeline(
@@ -269,22 +276,23 @@ def main() -> None:
         s.intent.value in ("create_file", "write_code") for s in pipeline.action_plan.steps
     )
     an = pipeline.intent_analysis
-    needs_human_review = (
-        an.confidence < _CONF_THRESHOLD
+    needs_review_checkbox = (
+        write_steps
         or an.requires_confirmation
         or bool(an.parse_warnings)
     )
+    low_conf_apply = apply_requires_user_confirmation(an, min_confidence=_EXEC_CONF_THRESHOLD)
 
     st.caption(
         f"Sandbox root: `{sandbox_root()}` — flat filenames only; extensions allowlisted. "
         "Flow: **Preview** (safe) → confirm if prompted → **Apply**."
     )
 
-    if write_steps or needs_human_review:
+    if write_steps or needs_review_checkbox:
         st.markdown("**Review**")
-        if needs_human_review:
+        if needs_review_checkbox:
             st.warning(
-                "Confidence or parser flags need a quick review before you apply changes to disk."
+                "Parser flags or model confirmation flags need a quick review before you apply changes to disk."
             )
         if write_steps:
             st.info("File tools require preview or explicit write confirmation before Apply.")
@@ -296,6 +304,12 @@ def main() -> None:
         )
     else:
         intent_ack = True
+
+    if low_conf_apply:
+        st.info(
+            f"Intent confidence is **{an.confidence:.0%}**, below the execution threshold "
+            f"({_EXEC_CONF_THRESHOLD:.0%}). **Apply** will ask you to confirm before any action runs."
+        )
 
     col_p, col_e = st.columns(2)
     with col_p:
@@ -314,6 +328,57 @@ def main() -> None:
         value=False,
         key="ep_allow_overwrite",
     )
+
+    def _run_apply() -> None:
+        if not (intent_ack if needs_review_checkbox else True):
+            st.error("Check the review checkbox above before applying.")
+            return
+        if not write_apply_allowed(write_steps, bool(st.session_state.get("ep_confirm_writes", False))):
+            st.error("Non–dry-run file writes require “I confirm writes”.")
+            return
+        cw = bool(st.session_state.get("ep_confirm_writes", False))
+        ao = bool(st.session_state.get("ep_allow_overwrite", False))
+        execution = _ROUTER.execute_plan(
+            pipeline.action_plan,
+            pipeline.intent_analysis,
+            user_utterance=pipeline.transcription.text,
+            transcription_text=pipeline.transcription.text,
+            dry_run=False,
+            confirm_writes=cw,
+            allow_overwrite=ao,
+            action_timeline=st.session_state["ep_action_timeline"],
+        )
+        updated = PipelineResult(
+            transcription=pipeline.transcription,
+            intent_analysis=pipeline.intent_analysis,
+            action_plan=pipeline.action_plan,
+            execution=execution,
+        )
+        st.session_state["echo_pipeline"] = updated
+        ek, el = execution_status_badge(execution.execution_status)
+        append_timeline("Execution finished", el, status=ek, phase="execution")
+        st.rerun()
+
+    awaiting_low_conf = bool(st.session_state.get("ep_await_exec_low_conf"))
+    if awaiting_low_conf and not low_conf_apply:
+        st.session_state.pop("ep_await_exec_low_conf", None)
+        awaiting_low_conf = False
+
+    if awaiting_low_conf and low_conf_apply:
+        st.warning("Low confidence detected. Please confirm before executing.")
+        st.caption(
+            f"Confidence {an.confidence:.0%} is below {_EXEC_CONF_THRESHOLD:.0%}. "
+            "Cancel returns you to the plan without running tools."
+        )
+        c_yes, c_no = st.columns(2)
+        with c_yes:
+            if st.button("Confirm", use_container_width=True, type="primary", key="ep_exec_low_conf_confirm"):
+                st.session_state["ep_await_exec_low_conf"] = False
+                _run_apply()
+        with c_no:
+            if st.button("Cancel", use_container_width=True, key="ep_exec_low_conf_cancel"):
+                st.session_state["ep_await_exec_low_conf"] = False
+                st.rerun()
 
     if preview:
         ex = _ROUTER.execute_plan(
@@ -352,33 +417,11 @@ def main() -> None:
             )
 
     if apply_run:
-        if not (intent_ack if (write_steps or needs_human_review) else True):
-            st.error("Check the review checkbox above before applying.")
-        elif not write_apply_allowed(write_steps, bool(st.session_state.get("ep_confirm_writes", False))):
-            st.error("Non–dry-run file writes require “I confirm writes”.")
-        else:
-            cw = bool(st.session_state.get("ep_confirm_writes", False))
-            ao = bool(st.session_state.get("ep_allow_overwrite", False))
-            execution = _ROUTER.execute_plan(
-                pipeline.action_plan,
-                pipeline.intent_analysis,
-                user_utterance=pipeline.transcription.text,
-                transcription_text=pipeline.transcription.text,
-                dry_run=False,
-                confirm_writes=cw,
-                allow_overwrite=ao,
-                action_timeline=st.session_state["ep_action_timeline"],
-            )
-            updated = PipelineResult(
-                transcription=pipeline.transcription,
-                intent_analysis=pipeline.intent_analysis,
-                action_plan=pipeline.action_plan,
-                execution=execution,
-            )
-            st.session_state["echo_pipeline"] = updated
-            ek, el = execution_status_badge(execution.execution_status)
-            append_timeline("Execution finished", el, status=ek, phase="execution")
+        if low_conf_apply:
+            st.session_state["ep_await_exec_low_conf"] = True
             st.rerun()
+        else:
+            _run_apply()
 
     current = st.session_state.get("echo_pipeline")
     if current and current.execution:

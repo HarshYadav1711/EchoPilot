@@ -9,6 +9,17 @@ from utils.logger import get_logger
 
 logger = get_logger("intent")
 
+
+def apply_requires_user_confirmation(analysis: IntentAnalysis, *, min_confidence: float) -> bool:
+    """
+    When True, the UI must not run Apply immediately — user confirms first (low-confidence guard).
+
+    Independent of the model's ``requires_confirmation`` flag and of validation thresholds
+    used inside :func:`validate_intent_payload`.
+    """
+    return analysis.confidence < min_confidence
+
+
 _SYSTEM_PROMPT = """You are a strict JSON intent classifier for a local desktop assistant.
 Reply with one JSON object only. No markdown fences, no commentary.
 
