@@ -1,7 +1,7 @@
 """
-EchoPilot Streamlit entrypoint.
+EchoPilot Streamlit entrypoint — full pipeline: input → reasoning → execution → timeline.
 
-Run from the project root (`output/`) so package imports resolve:
+Run from the project root (`output/`):
   streamlit run app/streamlit_app.py
 """
 
@@ -10,13 +10,23 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Ensure the project root (parent of `app/`) is importable without editable install
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import streamlit as st  # noqa: E402
 
+from app.ui_helpers import (  # noqa: E402
+    MAX_TIMELINE,
+    append_timeline,
+    badge_html,
+    execution_status_badge,
+    inject_ep_style,
+    intent_confidence_status,
+    render_badge,
+    reset_ep_session,
+    transcription_badge,
+)
 from core.config import get_settings  # noqa: E402
 from core.intent import IntentClassifier  # noqa: E402
 from core.memory import SessionMemory  # noqa: E402
@@ -31,152 +41,328 @@ _TRANSCRIBER = SpeechTranscriber(_SETTINGS)
 _CLASSIFIER = IntentClassifier(_SETTINGS)
 _ROUTER = IntentRouter()
 _MEMORY = SessionMemory()
+_CONF_THRESHOLD = _SETTINGS.intent_confidence_threshold
+
+
+def _empty_card(message: str) -> None:
+    st.markdown(f'<p class="ep-muted">{message}</p>', unsafe_allow_html=True)
+
+
+def _section_header(title: str, subtitle: str = "") -> None:
+    st.markdown(f'<p class="ep-section-title">{title}</p>', unsafe_allow_html=True)
+    if subtitle:
+        st.caption(subtitle)
 
 
 def main() -> None:
-    st.set_page_config(page_title="EchoPilot", layout="wide")
-    st.title("EchoPilot")
-    st.caption("Local voice AI — transcribe, classify intent, and execute safe sandbox actions.")
+    st.set_page_config(page_title="EchoPilot", layout="wide", initial_sidebar_state="collapsed")
+    inject_ep_style()
 
-    st.subheader("Audio input")
-    mic_audio = st.audio_input("Record from microphone", label_visibility="visible")
-    uploaded = st.file_uploader(
-        "Or upload audio",
-        type=["wav", "mp3", "m4a", "webm", "ogg", "flac", "aac"],
-        help="Common speech formats; files are processed under the app sandbox only.",
-    )
+    st.markdown('<div class="ep-wrap">', unsafe_allow_html=True)
 
-    run = st.button("Transcribe & classify intent", type="primary")
+    h1, h2 = st.columns([4, 1])
+    with h1:
+        st.title("EchoPilot")
+        st.caption("Local pipeline: audio → transcript → intent → plan → safe execution")
+    with h2:
+        if st.button("Reset session", use_container_width=True, help="Clear transcript, plan, previews, and timeline"):
+            reset_ep_session()
+            for k in ("ep_intent_ack", "ep_confirm_writes", "ep_allow_overwrite"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    # —— 1. Input ——
+    _section_header("1 · Input", "Microphone or file — audio never leaves your machine for STT.")
+    with st.container():
+        st.markdown('<div class="ep-card">', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            mic_audio = st.audio_input("Microphone", label_visibility="visible")
+        with c2:
+            uploaded = st.file_uploader(
+                "Upload audio",
+                type=["wav", "mp3", "m4a", "webm", "ogg", "flac", "aac"],
+                help="Processed only inside the project sandbox.",
+            )
+        run = st.button("Run transcription & intent", type="primary", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if run:
         extra_warnings: list[str] = []
         if mic_audio is not None and uploaded is not None:
-            extra_warnings.append("Both microphone and file provided; using microphone recording.")
+            extra_warnings.append("Both sources provided — using the microphone recording.")
 
+        tx = None
         if mic_audio is not None:
             try:
                 data = read_audio_bytes(mic_audio)
             except (TypeError, ValueError, OSError) as exc:
                 st.error(f"Could not read microphone audio: {exc}")
-                return
-            tx = _TRANSCRIBER.transcribe_from_bytes(
-                data,
-                filename_for_suffix="recording.wav",
-                source=TranscriptionSource.MICROPHONE,
-            )
+                append_timeline("Input error", str(exc), status="failure", phase="input")
+            else:
+                tx = _TRANSCRIBER.transcribe_from_bytes(
+                    data,
+                    filename_for_suffix="recording.wav",
+                    source=TranscriptionSource.MICROPHONE,
+                )
         elif uploaded is not None:
             try:
                 data = uploaded.getvalue() if hasattr(uploaded, "getvalue") else uploaded.read()
             except (OSError, ValueError) as exc:
                 st.error(f"Could not read upload: {exc}")
-                return
-            if not data:
-                st.error("Uploaded file is empty.")
-                return
-            tx = _TRANSCRIBER.transcribe_from_bytes(
-                data,
-                filename_for_suffix=getattr(uploaded, "name", None),
-                source=TranscriptionSource.UPLOAD,
-            )
+                append_timeline("Upload read failed", str(exc), status="failure", phase="input")
+            else:
+                if not data:
+                    st.error("Uploaded file is empty.")
+                    append_timeline("Empty upload", "", status="failure", phase="input")
+                else:
+                    tx = _TRANSCRIBER.transcribe_from_bytes(
+                        data,
+                        filename_for_suffix=getattr(uploaded, "name", None),
+                        source=TranscriptionSource.UPLOAD,
+                    )
         else:
-            st.warning("Provide a microphone recording or upload a file.")
-            return
+            st.warning("Add a recording or a file to continue.")
+            append_timeline("No audio provided", "", status="warning", phase="input")
 
-        if extra_warnings:
-            tx.warnings = [*extra_warnings, *tx.warnings]
+        if tx is not None:
+            if extra_warnings:
+                tx.warnings = [*extra_warnings, *tx.warnings]
 
-        st.subheader("Transcription")
-        st.json(
-            {
-                "ok": tx.ok,
-                "text": tx.text,
-                "language": tx.language,
-                "duration_s": tx.duration_s,
-                "source_type": tx.source_type,
-                "warnings": tx.warnings,
-                "error": tx.error,
-            }
-        )
-
-        if not tx.ok or not (tx.text or "").strip():
-            st.info("Intent classification skipped until transcription succeeds with non-empty text.")
+            st.session_state["last_stt"] = tx
             st.session_state.pop("echo_pipeline", None)
-            return
+            st.session_state.pop("ep_last_preview", None)
 
-        analysis = _CLASSIFIER.classify(tx.text)
-        plan = _ROUTER.build_action_plan(analysis)
-        pipeline = PipelineResult(transcription=tx, intent_analysis=analysis, action_plan=plan)
-        st.session_state["echo_pipeline"] = pipeline
+            if not tx.ok or not (tx.text or "").strip():
+                append_timeline(
+                    "Transcription failed",
+                    tx.error or "No usable text",
+                    status="failure",
+                    phase="input",
+                )
+                st.rerun()
 
-        st.subheader("Detected intent")
-        st.json(
-            {
-                "primary_intent": analysis.primary_intent.value,
-                "sub_intents": [s.value for s in analysis.sub_intents],
-                "arguments": analysis.arguments,
-                "confidence": analysis.confidence,
-                "requires_confirmation": analysis.requires_confirmation,
-                "explanation_for_ui": analysis.explanation_for_ui,
-                "parse_warnings": analysis.parse_warnings,
-            }
-        )
+            analysis = _CLASSIFIER.classify(tx.text)
+            plan = _ROUTER.build_action_plan(analysis)
+            pipeline = PipelineResult(transcription=tx, intent_analysis=analysis, action_plan=plan)
+            st.session_state["echo_pipeline"] = pipeline
 
-        st.subheader("Planned actions (ordered)")
-        st.json(
-            {
-                "requires_confirmation": plan.requires_confirmation,
-                "explanation_for_ui": plan.explanation_for_ui,
-                "steps": [
-                    {
-                        "order": step.order,
-                        "intent": step.intent.value,
-                        "tool_route": step.tool_route,
-                        "description": step.description,
-                    }
-                    for step in plan.steps
-                ],
-            }
-        )
+            append_timeline(
+                "Transcription ready",
+                (tx.text[:120] + "…") if len(tx.text) > 120 else tx.text,
+                status=transcription_badge(True),
+                phase="input",
+            )
+            append_timeline(
+                "Intent classified",
+                f"{analysis.primary_intent.value} · conf {analysis.confidence:.0%}",
+                status=intent_confidence_status(analysis.confidence, _CONF_THRESHOLD),
+                phase="reasoning",
+            )
+            st.rerun()
 
-        if analysis.raw_llm_text:
-            with st.expander("Raw model JSON (debug)"):
-                st.code(analysis.raw_llm_text, language="json")
-
-    pipeline = st.session_state.get("echo_pipeline")
-    if pipeline is None:
-        return
-
+    # —— 2. Reasoning (transcript + intent + confidence + plan) ——
     st.divider()
-    st.subheader("Execution (sandbox)")
-    st.caption(f"Writable root: `{sandbox_root()}` — flat filenames only; extensions are allowlisted.")
+    _section_header("2 · Reasoning", "What was said, what the model understood, and the ordered plan.")
+    st.markdown('<div class="ep-card">', unsafe_allow_html=True)
 
-    dry_run = st.checkbox("Dry-run (preview only — no disk writes)", value=True)
-    confirm_writes = st.checkbox(
-        "I confirm writes inside the sandbox above",
-        value=False,
-        help="Required before any create_file or write_code step writes bytes to disk.",
-    )
-    allow_overwrite = st.checkbox(
-        "Allow overwriting an existing file in the sandbox",
-        value=False,
-    )
+    last_stt = st.session_state.get("last_stt")
+    pipeline = st.session_state.get("echo_pipeline")
+
+    if last_stt is None:
+        _empty_card("No transcription yet. Use **Run transcription & intent** in the section above.")
+        r1, r2 = st.columns([3, 1])
+        with r2:
+            render_badge("neutral", "Empty")
+    else:
+        r1, r2 = st.columns([3, 1])
+        with r1:
+            st.markdown("**Transcription**")
+            if last_stt.ok:
+                st.text_area(
+                    "Transcript",
+                    value=last_stt.text,
+                    height=120,
+                    disabled=True,
+                    label_visibility="collapsed",
+                    key="tx_display",
+                )
+                meta = []
+                if last_stt.language:
+                    meta.append(f"Lang: {last_stt.language}")
+                if last_stt.duration_s is not None:
+                    meta.append(f"Duration: {last_stt.duration_s:.1f}s")
+                if last_stt.source_type:
+                    meta.append(f"Source: {last_stt.source_type}")
+                if meta:
+                    st.caption(" · ".join(meta))
+                if last_stt.warnings:
+                    for w in last_stt.warnings:
+                        st.warning(w)
+            else:
+                st.error(last_stt.error or "Transcription failed.")
+        with r2:
+            render_badge(transcription_badge(last_stt.ok), "STT")
+
+        if pipeline is not None:
+            an = pipeline.intent_analysis
+            pl = pipeline.action_plan
+            st.markdown("---")
+            ic1, ic2 = st.columns([3, 1])
+            with ic1:
+                st.markdown("**Detected intent**")
+                st.write(an.explanation_for_ui)
+                st.caption(f"Primary: `{an.primary_intent.value}`")
+            with ic2:
+                bc = intent_confidence_status(an.confidence, _CONF_THRESHOLD)
+                render_badge(bc, f"Confidence {an.confidence:.0%}")
+
+            st.markdown("**Confidence**")
+            st.progress(min(1.0, max(0.0, an.confidence)))
+            st.caption(f"{an.confidence:.0%} · model threshold {_CONF_THRESHOLD:.0%}")
+
+            st.markdown("**Planned actions**")
+            if not pl.steps:
+                _empty_card("No steps in this plan.")
+            else:
+                for step in pl.steps:
+                    st.markdown(
+                        f"{step.order}. **{step.intent.value}** — _{step.description}_  \n"
+                        f"<span class='ep-muted'>{step.tool_route}</span>",
+                        unsafe_allow_html=True,
+                    )
+
+            if an.parse_warnings:
+                st.warning("Parser / model notes: " + "; ".join(an.parse_warnings))
+
+            with st.expander("Technical details (intent JSON)", expanded=False):
+                st.json(
+                    {
+                        "sub_intents": [s.value for s in an.sub_intents],
+                        "arguments": an.arguments,
+                        "requires_confirmation": an.requires_confirmation,
+                        "parse_warnings": an.parse_warnings,
+                    }
+                )
+            if an.raw_llm_text:
+                with st.expander("Raw model output", expanded=False):
+                    st.code(an.raw_llm_text, language="json")
+        else:
+            st.info("Intent appears after a successful transcription with non-empty text.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # —— 3. Execution ——
+    st.divider()
+    _section_header("3 · Execution", "Preview writes, confirm, then apply. All files stay under the sandbox.")
+    st.markdown('<div class="ep-card">', unsafe_allow_html=True)
+
+    if pipeline is None:
+        _empty_card("Nothing to execute yet. Complete step **1 · Input** with a successful transcription first.")
+        st.caption(f"Sandbox directory: `{sandbox_root()}`")
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        _footer_timeline()
+        return
 
     write_steps = any(
         s.intent.value in ("create_file", "write_code") for s in pipeline.action_plan.steps
     )
+    an = pipeline.intent_analysis
+    low_or_flagged = an.confidence < _CONF_THRESHOLD or an.requires_confirmation or bool(an.parse_warnings)
 
-    if st.button("Run action plan", type="primary"):
-        if not dry_run and write_steps and not confirm_writes:
-            st.error('Non–dry-run file writes require “I confirm writes”. Leave dry-run on to preview safely.')
+    st.caption(f"Sandbox: `{sandbox_root()}` · flat filenames · allowlisted extensions")
+
+    if write_steps or low_or_flagged:
+        st.markdown("**Confirmation**")
+        if low_or_flagged:
+            st.warning(
+                "Low confidence and/or parser notes — review the plan before running tools."
+            )
+        if write_steps:
+            st.info("This plan may write files. Preview first, then confirm before applying to disk.")
+
+        intent_ack = st.checkbox(
+            "I have reviewed the transcription, intent, and plan and want to run tools",
+            value=st.session_state.get("ep_intent_ack", False),
+            key="ep_intent_ack",
+        )
+    else:
+        intent_ack = True
+        st.caption("No file writes in this plan — confirmation is light.")
+
+    col_p, col_e = st.columns(2)
+    with col_p:
+        preview = st.button("Generate preview (dry-run)", use_container_width=True, help="No disk writes; shows what would happen.")
+    with col_e:
+        apply_run = st.button("Apply plan (execute)", use_container_width=True, type="primary")
+
+    st.checkbox(
+        "I confirm writes inside the sandbox",
+        value=False,
+        help="Required when applying plans that create or overwrite files.",
+        key="ep_confirm_writes",
+    )
+    allow_overwrite = st.checkbox(
+        "Allow overwriting an existing file in the sandbox",
+        value=False,
+        key="ep_allow_overwrite",
+    )
+
+    if preview:
+        if not (intent_ack if (write_steps or low_or_flagged) else True):
+            st.error("Check the confirmation box above before running tools.")
         else:
+            ex = _ROUTER.execute_plan(
+                pipeline.action_plan,
+                pipeline.intent_analysis,
+                user_utterance=pipeline.transcription.text,
+                transcription_text=pipeline.transcription.text,
+                dry_run=True,
+                confirm_writes=False,
+                allow_overwrite=bool(st.session_state.get("ep_allow_overwrite", False)),
+            )
+            st.session_state["ep_last_preview"] = ex
+            kind, label = execution_status_badge(ex.execution_status)
+            append_timeline("Preview (dry-run)", label, status=kind, phase="execution")
+            st.rerun()
+
+    preview_ex = st.session_state.get("ep_last_preview")
+    if preview_ex is not None:
+        st.markdown("**Write preview**")
+        pr_kind, pr_label = execution_status_badge(preview_ex.execution_status)
+        st.markdown(badge_html(pr_kind, pr_label), unsafe_allow_html=True)
+        for log in preview_ex.step_logs:
+            prev = log.get("dry_run_preview_excerpt") or ""
+            if prev:
+                with st.expander(f"Step {log.get('order')} · {log.get('intent')} — preview"):
+                    st.code(prev, language="text")
+        if preview_ex.final_output and preview_ex.final_output != "No successful output from tools.":
+            st.markdown("**Output (preview run)**")
+            st.text_area(
+                "preview_out",
+                value=preview_ex.final_output[:8000],
+                height=min(400, 120 + preview_ex.final_output.count("\n") * 20),
+                disabled=True,
+                label_visibility="collapsed",
+            )
+
+    if apply_run:
+        if not (intent_ack if (write_steps or low_or_flagged) else True):
+            st.error("Confirm that you reviewed the plan before applying.")
+        elif not write_apply_allowed(write_steps, bool(st.session_state.get("ep_confirm_writes", False))):
+            st.error("Non–dry-run file writes require “I confirm writes”.")
+        else:
+            cw = bool(st.session_state.get("ep_confirm_writes", False))
+            ao = bool(st.session_state.get("ep_allow_overwrite", False))
             execution = _ROUTER.execute_plan(
                 pipeline.action_plan,
                 pipeline.intent_analysis,
                 user_utterance=pipeline.transcription.text,
                 transcription_text=pipeline.transcription.text,
-                dry_run=dry_run,
-                confirm_writes=confirm_writes,
-                allow_overwrite=allow_overwrite,
+                dry_run=False,
+                confirm_writes=cw,
+                allow_overwrite=ao,
             )
             updated = PipelineResult(
                 transcription=pipeline.transcription,
@@ -186,22 +372,71 @@ def main() -> None:
             )
             st.session_state["echo_pipeline"] = updated
             _MEMORY.append(updated)
+            ek, el = execution_status_badge(execution.execution_status)
+            append_timeline("Execution finished", el, status=ek, phase="execution")
+            st.rerun()
 
     current = st.session_state.get("echo_pipeline")
     if current and current.execution:
         ex = current.execution
-        st.subheader("Execution result")
-        st.json(
-            {
-                "action_taken": ex.action_taken,
-                "files_created_or_modified": ex.files_created_or_modified,
-                "execution_status": ex.execution_status,
-                "final_output": ex.final_output,
-                "warnings": ex.warnings,
-            }
+        st.markdown("---")
+        st.markdown("**Final execution result**")
+        st.caption("Reflects the last **Apply plan** run (not dry-run preview).")
+        fk, fl = execution_status_badge(ex.execution_status)
+        st.markdown(badge_html(fk, fl), unsafe_allow_html=True)
+        if ex.files_created_or_modified:
+            st.success("Files touched: " + ", ".join(ex.files_created_or_modified))
+        elif ex.execution_status not in ("dry_run",):
+            st.caption("No files written in this run.")
+        st.text_area(
+            "final_out",
+            value=ex.final_output[:12000],
+            height=min(420, 160 + ex.final_output.count("\n") * 18),
+            disabled=True,
+            label_visibility="collapsed",
         )
-        with st.expander("Structured step logs"):
+        if ex.warnings:
+            for w in ex.warnings:
+                st.warning(w)
+        with st.expander("Structured logs", expanded=False):
             st.json(ex.step_logs)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    _footer_timeline()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def write_apply_allowed(write_steps: bool, confirm_writes: bool) -> bool:
+    """Disk writes require an explicit checkbox when the plan includes file tools."""
+    if not write_steps:
+        return True
+    return confirm_writes
+
+
+def _footer_timeline() -> None:
+    st.divider()
+    _section_header("Session timeline", "Recent steps in this browser session.")
+    st.markdown('<div class="ep-card">', unsafe_allow_html=True)
+    tl = st.session_state.get("ep_timeline") or []
+    if not tl:
+        _empty_card("No events yet — transcription and execution steps will appear here.")
+    else:
+        for ev in reversed(tl[-MAX_TIMELINE:]):
+            ev_status = ev.get("status", "neutral")
+            lab = ev.get("label", "")
+            ts = ev.get("ts", "")
+            detail = ev.get("detail", "")
+            phase = ev.get("phase", "")
+            ph = f"[{phase}] " if phase else ""
+            label_badge = str(ev_status).replace("_", " ").title()
+            st.markdown(
+                f'<div class="ep-timeline-item">{badge_html(ev_status, label_badge)} '
+                f"<strong>{ph}{lab}</strong> · <span class='ep-muted'>{ts}</span><br/>"
+                f"<span class='ep-muted'>{detail}</span></div>",
+                unsafe_allow_html=True,
+            )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
