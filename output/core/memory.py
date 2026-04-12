@@ -21,13 +21,15 @@ class SessionMemory:
 
     def append(self, result: PipelineResult) -> None:
         """Record a completed pipeline result."""
-        self.entries.append(
-            {
-                "primary_intent": result.intent_analysis.primary_intent.value,
-                "requires_confirmation": result.action_plan.requires_confirmation,
-                "steps": [s.tool_route for s in result.action_plan.steps],
-            }
-        )
+        entry: Dict[str, Any] = {
+            "primary_intent": result.intent_analysis.primary_intent.value,
+            "requires_confirmation": result.action_plan.requires_confirmation,
+            "steps": [s.tool_route for s in result.action_plan.steps],
+        }
+        if result.execution:
+            entry["execution_status"] = result.execution.execution_status
+            entry["files_touched"] = result.execution.files_created_or_modified
+        self.entries.append(entry)
         if len(self.entries) > self.max_entries:
             self.entries = self.entries[-self.max_entries :]
 

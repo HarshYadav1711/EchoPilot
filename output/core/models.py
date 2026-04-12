@@ -122,12 +122,31 @@ class ToolResult:
     ok: bool
     message: str
     payload: Optional[Dict[str, Any]] = None
+    dry_run_preview: Optional[str] = None
+    affected_paths: List[str] = field(default_factory=list)
+
+
+@dataclass
+class RouterExecutionResult:
+    """
+    Outcome of running an action plan through local tools.
+
+    ``step_logs`` holds structured entries for auditing (intent, status, notes).
+    """
+
+    action_taken: str
+    files_created_or_modified: List[str]
+    execution_status: str
+    final_output: str
+    warnings: List[str]
+    step_logs: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
 class PipelineResult:
-    """Aggregate result for UI: transcription → intent → action plan."""
+    """Aggregate result for UI: transcription → intent → action plan → optional execution."""
 
     transcription: TranscriptionResult
     intent_analysis: IntentAnalysis
     action_plan: ActionPlan
+    execution: Optional["RouterExecutionResult"] = None

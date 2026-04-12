@@ -1,12 +1,10 @@
-"""Map validated intent analysis to an ordered, local-only action plan."""
+"""Map validated intent analysis to an ordered, local-only action plan and execution."""
 
 from __future__ import annotations
 
-from core.models import ActionPlan, ActionPlanStep, IntentAnalysis, PrimaryIntent, ToolResult
-from tools import chat, code_gen, file_ops, summarizer
-from utils.logger import get_logger
-
-logger = get_logger("router")
+from core.execution_context import ExecutionContext
+from core.executor import dispatch_intent_step, execute_action_plan
+from core.models import ActionPlan, ActionPlanStep, IntentAnalysis, PrimaryIntent, RouterExecutionResult, ToolResult
 
 # Maps intent → tool module function name for display and dispatch.
 _INTENT_TOOL_ROUTE: dict[PrimaryIntent, str] = {
@@ -58,27 +56,45 @@ def _step_description(intent: PrimaryIntent, args: dict) -> str:
 
 
 class IntentRouter:
-    """Bridge validated intents to tools; prefer ``build_action_plan`` for structured UI."""
+    """Bridge validated intents to tools and structured execution results."""
 
     def build_action_plan(self, analysis: IntentAnalysis) -> ActionPlan:
         return compile_action_plan(analysis)
 
-    def route_first_step(self, analysis: IntentAnalysis) -> tuple[str, ToolResult]:
-        """
-        Run only the first planned step (legacy helper until full executor exists).
+    def execute_plan(
+        self,
+        plan: ActionPlan,
+        analysis: IntentAnalysis,
+        *,
+        user_utterance: str,
+        transcription_text: str,
+        dry_run: bool,
+        confirm_writes: bool,
+        allow_overwrite: bool,
+    ) -> RouterExecutionResult:
+        return execute_action_plan(
+            plan,
+            analysis,
+            user_utterance=user_utterance,
+            transcription_text=transcription_text,
+            dry_run=dry_run,
+            confirm_writes=confirm_writes,
+            allow_overwrite=allow_overwrite,
+        )
 
-        Not used when the UI only displays the plan.
-        """
+    def route_first_step(self, analysis: IntentAnalysis, ctx: ExecutionContext | None = None) -> tuple[str, ToolResult]:
+        """Run only the first planned step (defaults to dry-run safe context)."""
         plan = compile_action_plan(analysis)
         if not plan.steps:
             return "noop", ToolResult(ok=False, message="Empty action plan.")
+        if ctx is None:
+            ctx = ExecutionContext(
+                user_utterance="",
+                transcription_text="",
+                dry_run=True,
+                confirm_writes=False,
+                allow_overwrite=False,
+            )
         first = plan.steps[0].intent
-        if first == PrimaryIntent.GENERAL_CHAT:
-            return "chat.reply", chat.reply(analysis)
-        if first == PrimaryIntent.SUMMARIZE:
-            return "summarizer.run", summarizer.run(analysis)
-        if first == PrimaryIntent.CREATE_FILE:
-            return "file_ops.write_safe", file_ops.write_safe(analysis)
-        if first == PrimaryIntent.WRITE_CODE:
-            return "code_gen.generate", code_gen.generate(analysis)
-        return "noop", ToolResult(ok=False, message="Unsupported intent.")
+        label = plan.steps[0].tool_route
+        return label, dispatch_intent_step(first, analysis, ctx)
