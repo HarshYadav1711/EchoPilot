@@ -2,18 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-@pytest.fixture(scope="session", autouse=True)
-def add_project_root() -> None:
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
 
 
 def test_import_core() -> None:
@@ -37,7 +28,8 @@ def test_import_tools_utils() -> None:
 def test_safety_rejects_escape() -> None:
     from utils.safety import ensure_within_root
 
-    root = ROOT / "output"
+    base = Path(__file__).resolve().parent.parent
+    root = base / "output"
     root.mkdir(parents=True, exist_ok=True)
     with pytest.raises(ValueError):
-        ensure_within_root(ROOT / ".." / "etc" / "passwd", root)
+        ensure_within_root(base / ".." / "etc" / "passwd", root)

@@ -20,10 +20,11 @@ import streamlit as st  # noqa: E402
 from core.config import get_settings  # noqa: E402
 from core.intent import IntentClassifier  # noqa: E402
 from core.memory import SessionMemory  # noqa: E402
+from core.models import TranscriptionSource  # noqa: E402
 from core.router import IntentRouter  # noqa: E402
 from core.stt import SpeechTranscriber  # noqa: E402
+from utils.streamlit_audio import read_audio_bytes  # noqa: E402
 
-# Wire singletons for import-time validation; UI flow to be implemented next
 _SETTINGS = get_settings()
 _TRANSCRIBER = SpeechTranscriber(_SETTINGS)
 _CLASSIFIER = IntentClassifier(_SETTINGS)
@@ -34,16 +35,67 @@ _MEMORY = SessionMemory()
 def main() -> None:
     st.set_page_config(page_title="EchoPilot", layout="wide")
     st.title("EchoPilot")
-    st.caption("Local voice AI — scaffold; STT, intent, and tools not yet implemented.")
+    st.caption("Local voice AI — audio capture and transcription (STT).")
 
-    st.subheader("Setup check")
-    st.code(f"project_root: {_SETTINGS.project_root}\ndata_dir: {_SETTINGS.data_dir}", language="text")
-
-    st.subheader("Pipeline (placeholder)")
-    st.write(
-        "Sections for **transcription**, **intent**, **action**, and **result** will render here "
-        "once STT, Ollama, and tools are wired."
+    st.subheader("Audio input")
+    mic_audio = st.audio_input("Record from microphone", label_visibility="visible")
+    uploaded = st.file_uploader(
+        "Or upload audio",
+        type=["wav", "mp3", "m4a", "webm", "ogg", "flac", "aac"],
+        help="Common speech formats; files are processed under the app sandbox only.",
     )
+
+    run = st.button("Transcribe", type="primary")
+
+    if run:
+        extra_warnings: list[str] = []
+        if mic_audio is not None and uploaded is not None:
+            extra_warnings.append("Both microphone and file provided; using microphone recording.")
+
+        if mic_audio is not None:
+            try:
+                data = read_audio_bytes(mic_audio)
+            except (TypeError, ValueError, OSError) as exc:
+                st.error(f"Could not read microphone audio: {exc}")
+                return
+            result = _TRANSCRIBER.transcribe_from_bytes(
+                data,
+                filename_for_suffix="recording.wav",
+                source=TranscriptionSource.MICROPHONE,
+            )
+        elif uploaded is not None:
+            try:
+                data = uploaded.getvalue() if hasattr(uploaded, "getvalue") else uploaded.read()
+            except (OSError, ValueError) as exc:
+                st.error(f"Could not read upload: {exc}")
+                return
+            if not data:
+                st.error("Uploaded file is empty.")
+                return
+            result = _TRANSCRIBER.transcribe_from_bytes(
+                data,
+                filename_for_suffix=getattr(uploaded, "name", None),
+                source=TranscriptionSource.UPLOAD,
+            )
+        else:
+            st.warning("Provide a microphone recording or upload a file.")
+            return
+
+        if extra_warnings:
+            result.warnings = [*extra_warnings, *result.warnings]
+
+        st.subheader("Transcription")
+        st.json(
+            {
+                "ok": result.ok,
+                "text": result.text,
+                "language": result.language,
+                "duration_s": result.duration_s,
+                "source_type": result.source_type,
+                "warnings": result.warnings,
+                "error": result.error,
+            }
+        )
 
 
 if __name__ == "__main__":
