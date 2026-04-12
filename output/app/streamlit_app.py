@@ -34,8 +34,10 @@ from core.models import PipelineResult, TranscriptionSource  # noqa: E402
 from core.router import IntentRouter  # noqa: E402
 from core.stt import SpeechTranscriber  # noqa: E402
 from tools.file_ops import sandbox_root  # noqa: E402
+from utils.logger import get_logger  # noqa: E402
 from utils.streamlit_audio import read_audio_bytes  # noqa: E402
 
+_LOG = get_logger("streamlit.app")
 _SETTINGS = get_settings()
 _TRANSCRIBER = SpeechTranscriber(_SETTINGS)
 _CLASSIFIER = IntentClassifier(_SETTINGS)
@@ -103,8 +105,9 @@ def main() -> None:
             try:
                 data = read_audio_bytes(mic_audio)
             except (TypeError, ValueError, OSError) as exc:
-                st.error(f"Could not read microphone audio: {exc}")
-                append_timeline("Input error", str(exc), status="failure", phase="input")
+                _LOG.warning("Microphone read failed: %s", exc)
+                st.error("Could not read microphone audio. Try recording again or upload a file instead.")
+                append_timeline("Input error", "microphone read failed", status="failure", phase="input")
             else:
                 tx = _TRANSCRIBER.transcribe_from_bytes(
                     data,
@@ -115,8 +118,9 @@ def main() -> None:
             try:
                 data = uploaded.getvalue() if hasattr(uploaded, "getvalue") else uploaded.read()
             except (OSError, ValueError) as exc:
-                st.error(f"Could not read upload: {exc}")
-                append_timeline("Upload read failed", str(exc), status="failure", phase="input")
+                _LOG.warning("Upload read failed: %s", exc)
+                st.error("Could not read the uploaded file. Try another file or a different format.")
+                append_timeline("Upload read failed", "file read failed", status="failure", phase="input")
             else:
                 if not data:
                     st.error("Uploaded file is empty.")
@@ -149,9 +153,22 @@ def main() -> None:
                 )
                 st.rerun()
 
-            analysis = _CLASSIFIER.classify(tx.text)
-            plan = _ROUTER.build_action_plan(analysis)
-            pipeline = PipelineResult(transcription=tx, intent_analysis=analysis, action_plan=plan)
+            try:
+                analysis = _CLASSIFIER.classify(tx.text)
+                plan = _ROUTER.build_action_plan(analysis)
+                pipeline = PipelineResult(transcription=tx, intent_analysis=analysis, action_plan=plan)
+            except Exception:
+                _LOG.exception("Pipeline build after transcription failed")
+                st.session_state["echo_pipeline"] = None
+                append_timeline(
+                    "Intent plan failed",
+                    "unexpected error",
+                    status="failure",
+                    phase="reasoning",
+                )
+                st.error("Could not build an intent plan from the transcript. Try again or rephrase.")
+                st.rerun()
+
             st.session_state["echo_pipeline"] = pipeline
 
             append_timeline(
@@ -215,6 +232,8 @@ def main() -> None:
             an = pipeline.intent_analysis
             pl = pipeline.action_plan
             st.markdown("---")
+            if an.intent_degraded and an.user_notice:
+                st.info(an.user_notice)
             ic1, ic2 = st.columns([3, 1])
             with ic1:
                 st.markdown("**Detected intent**")
@@ -251,7 +270,7 @@ def main() -> None:
                         unsafe_allow_html=True,
                     )
 
-            if an.parse_warnings:
+            if an.parse_warnings and not an.intent_degraded:
                 st.warning("Parser / model notes: " + "; ".join(an.parse_warnings))
 
             with st.expander("Technical details (intent JSON)", expanded=False):
@@ -260,7 +279,10 @@ def main() -> None:
                     "arguments": an.arguments,
                     "requires_confirmation": an.requires_confirmation,
                     "parse_warnings": an.parse_warnings,
+                    "intent_degraded": an.intent_degraded,
                 }
+                if an.user_notice:
+                    detail["user_notice"] = an.user_notice
                 if an.compound_parts:
                     detail["compound_parts"] = an.compound_parts
                 if an.per_step_arguments:

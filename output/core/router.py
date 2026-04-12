@@ -8,6 +8,9 @@ from core.execution_context import ExecutionContext
 from core.executor import dispatch_intent_step, execute_action_plan
 from core.memory import append_executed_actions
 from core.models import ActionPlan, ActionPlanStep, IntentAnalysis, PrimaryIntent, RouterExecutionResult, ToolResult
+from utils.logger import get_logger
+
+logger = get_logger("router")
 
 # Maps intent → tool module function name for display and dispatch.
 _INTENT_TOOL_ROUTE: dict[PrimaryIntent, str] = {
@@ -78,15 +81,28 @@ class IntentRouter:
         allow_overwrite: bool,
         action_timeline: list | None = None,
     ) -> RouterExecutionResult:
-        result = execute_action_plan(
-            plan,
-            analysis,
-            user_utterance=user_utterance,
-            transcription_text=transcription_text,
-            dry_run=dry_run,
-            confirm_writes=confirm_writes,
-            allow_overwrite=allow_overwrite,
-        )
+        try:
+            result = execute_action_plan(
+                plan,
+                analysis,
+                user_utterance=user_utterance,
+                transcription_text=transcription_text,
+                dry_run=dry_run,
+                confirm_writes=confirm_writes,
+                allow_overwrite=allow_overwrite,
+            )
+        except Exception:
+            logger.exception("execute_action_plan raised; returning structured failure")
+            return RouterExecutionResult(
+                action_taken="error",
+                files_created_or_modified=[],
+                execution_status="failure",
+                final_output="Something went wrong while running the plan. Please try again.",
+                warnings=[
+                    "Execution could not be completed. Details were logged for troubleshooting.",
+                ],
+                step_logs=[],
+            )
         if action_timeline is not None and not dry_run and result.step_logs:
             append_executed_actions(action_timeline, result.step_logs)
         return result

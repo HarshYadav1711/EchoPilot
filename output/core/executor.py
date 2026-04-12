@@ -71,7 +71,10 @@ def execute_action_plan(
             r = dispatch_intent_step(step.intent, eff, ctx)
         except Exception as exc:
             logger.exception("Unhandled tool error step=%s", step.order)
-            r = ToolResult(ok=False, message=f"Internal error: {exc!s}")
+            r = ToolResult(
+                ok=False,
+                message="This step could not be completed. See application logs for details.",
+            )
             any_fail = True
 
         log_entry = {

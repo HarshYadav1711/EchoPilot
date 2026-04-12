@@ -71,18 +71,29 @@ Rules:
 """
 
 
-def _fallback_analysis(reason: str, raw_llm_text: str | None = None) -> IntentAnalysis:
+_FALLBACK_EXPLANATION = "Could not parse intent reliably; continuing with a safe chat response."
+_DEFAULT_USER_NOTICE = "Intent parsing failed, falling back to chat."
+
+
+def _fallback_analysis(
+    reason: str,
+    raw_llm_text: str | None = None,
+    *,
+    user_notice: str | None = None,
+) -> IntentAnalysis:
     return IntentAnalysis(
         primary_intent=PrimaryIntent.GENERAL_CHAT,
         sub_intents=[PrimaryIntent.GENERAL_CHAT],
         arguments={},
         confidence=0.0,
         requires_confirmation=True,
-        explanation_for_ui="Classification unavailable; using safe general-chat fallback.",
+        explanation_for_ui=_FALLBACK_EXPLANATION,
         parse_warnings=[reason],
         raw_llm_text=raw_llm_text,
         compound_parts=[],
         per_step_arguments=None,
+        intent_degraded=True,
+        user_notice=user_notice or _DEFAULT_USER_NOTICE,
     )
 
 
@@ -137,6 +148,8 @@ def _merge_compound_two(
         raw_llm_text=raw,
         compound_parts=[left_text.strip(), right_text.strip()],
         per_step_arguments=per_step_arguments,
+        intent_degraded=False,
+        user_notice=None,
     )
 
 
@@ -147,6 +160,17 @@ class IntentClassifier:
         self._settings = settings or get_settings()
 
     def classify(self, user_text: str) -> IntentAnalysis:
+        """Always returns a usable analysis; logs failures and never raises to the UI."""
+        try:
+            return self._classify_inner(user_text)
+        except Exception as exc:
+            logger.exception("Intent classification failed unexpectedly")
+            return _fallback_analysis(
+                f"unexpected:{exc.__class__.__name__}",
+                user_notice="Intent parsing failed, falling back to chat.",
+            )
+
+    def _classify_inner(self, user_text: str) -> IntentAnalysis:
         text = (user_text or "").strip()
         if not text:
             return _fallback_analysis("empty_user_text")
@@ -154,9 +178,13 @@ class IntentClassifier:
         pair = try_split_compound_two(text)
         if pair is not None:
             left_t, right_t = pair
-            left_a = self._analyze_once(left_t)
-            right_a = self._analyze_once(right_t)
-            return _merge_compound_two(left_t, right_t, left_a, right_a)
+            try:
+                left_a = self._analyze_once(left_t)
+                right_a = self._analyze_once(right_t)
+                return _merge_compound_two(left_t, right_t, left_a, right_a)
+            except Exception as exc:
+                logger.exception("Compound intent handling failed; falling back to single clause")
+                return self._analyze_once(text)
 
         return self._analyze_once(text)
 
@@ -180,20 +208,26 @@ class IntentClassifier:
             raw = resp.get("message", {}).get("content")
             if not raw or not str(raw).strip():
                 logger.warning("Ollama returned empty content")
-                return _fallback_analysis("empty_ollama_response")
+                return _fallback_analysis(
+                    "empty_ollama_response",
+                    user_notice="Intent parsing failed, falling back to chat.",
+                )
         except Exception as exc:
-            logger.warning(
-                "Ollama intent call failed: %s: %s",
-                exc.__class__.__name__,
-                exc,
+            logger.exception("Ollama intent call failed")
+            return _fallback_analysis(
+                f"ollama_error:{exc.__class__.__name__}",
+                user_notice="Could not reach the intent model. Check Ollama is running, then try again.",
             )
-            return _fallback_analysis(f"ollama_error:{exc.__class__.__name__}")
 
         data, recovery = parse_json_loose(str(raw))
         parse_warnings: list[str] = []
         if recovery == "invalid_json" or data is None:
             logger.warning("Intent JSON parse failed after recovery attempts")
-            return _fallback_analysis("invalid_json", raw_llm_text=str(raw)[:4000])
+            return _fallback_analysis(
+                "invalid_json",
+                raw_llm_text=str(raw)[:4000],
+                user_notice="Intent parsing failed, falling back to chat.",
+            )
         if recovery == "recovered_from_embedded_json":
             parse_warnings.append("recovered_from_embedded_json")
 
@@ -215,6 +249,8 @@ class IntentClassifier:
             raw_llm_text=str(raw)[:4000],
             compound_parts=[],
             per_step_arguments=None,
+            intent_degraded=False,
+            user_notice=None,
         )
 
 

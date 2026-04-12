@@ -94,6 +94,9 @@ class IntentAnalysis:
     # Simple two-clause "X and Y" compounds: raw segments for UI; per-step arg overrides for tools.
     compound_parts: List[str] = field(default_factory=list)
     per_step_arguments: Optional[List[Dict[str, Any]]] = None
+    # When True, the classifier used a safe fallback (see ``user_notice`` for a short UI message).
+    intent_degraded: bool = False
+    user_notice: Optional[str] = None
 
     @property
     def primary_intent_value(self) -> str:
