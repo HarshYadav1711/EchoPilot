@@ -56,6 +56,7 @@ def _section_header(title: str, subtitle: str = "") -> None:
 def main() -> None:
     st.set_page_config(page_title="EchoPilot", layout="wide", initial_sidebar_state="collapsed")
     inject_ep_style()
+    st.session_state.setdefault("ep_action_timeline", [])
 
     st.markdown('<div class="ep-wrap">', unsafe_allow_html=True)
 
@@ -323,6 +324,7 @@ def main() -> None:
             dry_run=True,
             confirm_writes=False,
             allow_overwrite=bool(st.session_state.get("ep_allow_overwrite", False)),
+            action_timeline=None,
         )
         st.session_state["ep_last_preview"] = ex
         kind, label = execution_status_badge(ex.execution_status)
@@ -365,6 +367,7 @@ def main() -> None:
                 dry_run=False,
                 confirm_writes=cw,
                 allow_overwrite=ao,
+                action_timeline=st.session_state["ep_action_timeline"],
             )
             updated = PipelineResult(
                 transcription=pipeline.transcription,
@@ -404,7 +407,33 @@ def main() -> None:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+    _render_action_timeline()
+
     _footer_timeline()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_action_timeline() -> None:
+    """Structured log of each tool step from Apply runs (session_state, max 10 rows)."""
+    st.divider()
+    _section_header("Action Timeline", "Applied tool steps only — preview runs are not logged here.")
+    st.markdown('<div class="ep-card">', unsafe_allow_html=True)
+    entries = st.session_state.get("ep_action_timeline") or []
+    if not entries:
+        _empty_card("Nothing logged yet. **Apply** a plan to record tool steps.")
+    else:
+        for row in reversed(entries):
+            ts = row.get("timestamp", "")
+            intent = row.get("intent", "")
+            summ = row.get("summary", "")
+            st_t = row.get("result_status", "failure")
+            kind: str = "success" if st_t == "success" else "failure"
+            label = "OK" if st_t == "success" else "FAIL"
+            st.markdown(
+                f"**{ts}** · `{intent}` · {badge_html(kind, label)}",
+                unsafe_allow_html=True,
+            )
+            st.caption(summ)
     st.markdown("</div>", unsafe_allow_html=True)
 
 

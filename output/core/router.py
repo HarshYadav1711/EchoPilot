@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core.execution_context import ExecutionContext
 from core.executor import dispatch_intent_step, execute_action_plan
+from core.memory import append_executed_actions
 from core.models import ActionPlan, ActionPlanStep, IntentAnalysis, PrimaryIntent, RouterExecutionResult, ToolResult
 
 # Maps intent → tool module function name for display and dispatch.
@@ -71,8 +72,9 @@ class IntentRouter:
         dry_run: bool,
         confirm_writes: bool,
         allow_overwrite: bool,
+        action_timeline: list | None = None,
     ) -> RouterExecutionResult:
-        return execute_action_plan(
+        result = execute_action_plan(
             plan,
             analysis,
             user_utterance=user_utterance,
@@ -81,6 +83,9 @@ class IntentRouter:
             confirm_writes=confirm_writes,
             allow_overwrite=allow_overwrite,
         )
+        if action_timeline is not None and not dry_run and result.step_logs:
+            append_executed_actions(action_timeline, result.step_logs)
+        return result
 
     def route_first_step(self, analysis: IntentAnalysis, ctx: ExecutionContext | None = None) -> tuple[str, ToolResult]:
         """Run only the first planned step (defaults to dry-run safe context)."""

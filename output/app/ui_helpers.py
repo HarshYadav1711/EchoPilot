@@ -114,6 +114,7 @@ def reset_ep_session() -> None:
     for key in (
         "echo_pipeline",
         "ep_timeline",
+        "ep_action_timeline",
         "ep_last_preview",
         "ep_raw_intent_open",
         "last_stt",

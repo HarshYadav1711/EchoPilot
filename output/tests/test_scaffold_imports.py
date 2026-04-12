@@ -10,6 +10,7 @@ import pytest
 def test_import_core() -> None:
     import core.config  # noqa: F401
     import core.intent  # noqa: F401
+    import core.memory  # noqa: F401
     import core.models  # noqa: F401
     import core.router  # noqa: F401
     import core.stt  # noqa: F401
