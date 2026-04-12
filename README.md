@@ -41,7 +41,7 @@ streamlit run app/streamlit_app.py
 python -m pytest tests/ -q
 ```
 
-## Architecture (compact)
+## Architecture
 
 ```
                     ┌─────────────────┐
@@ -92,7 +92,7 @@ If both are provided, the UI prefers the microphone clip and notes that in warni
 - **`utils/safety.ensure_within_root`** is used when resolving paths so resolved paths cannot sit outside `data_dir`.
 - **Dry-run** executes tools without calling `Path.write_bytes` for real; **confirmation checkboxes** gate real writes.
 
-## Model choices (defaults)
+## Model choices
 
 | Piece | Default env | Notes |
 |-------|-------------|--------|
