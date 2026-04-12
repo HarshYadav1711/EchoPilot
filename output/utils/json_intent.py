@@ -141,15 +141,27 @@ def _clamp_confidence(val: Any) -> float:
     return max(0.0, min(1.0, c))
 
 
+_MAX_WHY_CHARS = 450
+
+
+def _clamp_why_this_action(text: str) -> str:
+    """Keep explainability text concise (about 1–2 short lines); no raw prompts."""
+    s = " ".join(text.split())
+    if len(s) > _MAX_WHY_CHARS:
+        s = s[: _MAX_WHY_CHARS - 1].rsplit(" ", 1)[0] + "…"
+    return s
+
+
 def validate_intent_payload(
     data: Dict[str, Any],
     *,
     confidence_threshold: float,
-) -> Tuple[PrimaryIntent, List[PrimaryIntent], Dict[str, Any], float, bool, str, List[str]]:
+) -> Tuple[PrimaryIntent, List[PrimaryIntent], Dict[str, Any], float, bool, str, str, List[str]]:
     """
     Map a parsed JSON dict into validated fields.
 
-    Returns (primary, sub_intents, arguments, confidence, requires_confirmation, explanation, warnings).
+    Returns (primary, sub_intents, arguments, confidence, requires_confirmation, explanation,
+    why_this_action, warnings).
     """
     warnings: List[str] = []
 
@@ -188,8 +200,17 @@ def validate_intent_payload(
         explanation = "No explanation provided by model."
         warnings.append("explanation_defaulted")
 
+    raw_why = data.get("why_this_action")
+    if isinstance(raw_why, str) and raw_why.strip():
+        why_this_action = _clamp_why_this_action(raw_why.strip())
+    elif explanation != "No explanation provided by model.":
+        why_this_action = _clamp_why_this_action(explanation)
+    else:
+        why_this_action = "These actions were chosen from the words you provided."
+        warnings.append("why_this_action_defaulted")
+
     if conf < confidence_threshold:
         requires_confirmation = True
         warnings.append("low_confidence_forces_confirmation")
 
-    return primary, subs, args, conf, requires_confirmation, explanation, warnings
+    return primary, subs, args, conf, requires_confirmation, explanation, why_this_action, warnings

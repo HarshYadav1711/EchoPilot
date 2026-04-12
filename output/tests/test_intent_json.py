@@ -36,11 +36,12 @@ def test_validate_low_confidence_forces_confirmation() -> None:
         "requires_confirmation": False,
         "explanation_for_ui": "test",
     }
-    primary, subs, args, conf, req, expl, w = validate_intent_payload(raw, confidence_threshold=0.55)
+    primary, subs, args, conf, req, expl, why, w = validate_intent_payload(raw, confidence_threshold=0.55)
     assert primary == PrimaryIntent.SUMMARIZE
     assert req is True
     assert "low_confidence_forces_confirmation" in w
     assert conf == 0.2
+    assert why == "test"
 
 
 def test_validate_compound_sub_intents() -> None:
@@ -52,7 +53,7 @@ def test_validate_compound_sub_intents() -> None:
         "requires_confirmation": False,
         "explanation_for_ui": "Summarize then save.",
     }
-    primary, subs, _, _, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
+    primary, subs, _, _, _, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
     assert primary == PrimaryIntent.SUMMARIZE
     assert [s.value for s in subs] == ["summarize", "create_file"]
 
@@ -65,6 +66,7 @@ def test_compile_action_plan_order() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="Two steps",
+        why_this_action="User asked to summarize then save to a file.",
         parse_warnings=[],
     )
     plan = compile_action_plan(analysis)
@@ -84,7 +86,21 @@ def test_invalid_primary_coerces_to_general_chat() -> None:
         "requires_confirmation": False,
         "explanation_for_ui": "x",
     }
-    primary, subs, _, _, _, _, w = validate_intent_payload(raw, confidence_threshold=0.55)
+    primary, subs, _, _, _, _, _, w = validate_intent_payload(raw, confidence_threshold=0.55)
     assert primary == PrimaryIntent.GENERAL_CHAT
     assert "invalid_or_missing_primary_intent" in w
     assert subs == [PrimaryIntent.GENERAL_CHAT]
+
+
+def test_validate_why_this_action_explicit() -> None:
+    raw = {
+        "primary_intent": "write_code",
+        "sub_intents": ["write_code"],
+        "arguments": {"language": "python"},
+        "confidence": 0.9,
+        "requires_confirmation": False,
+        "explanation_for_ui": "Code task",
+        "why_this_action": "User requested creation of a Python file with specific functionality.",
+    }
+    _, _, _, _, _, _, why, _ = validate_intent_payload(raw, confidence_threshold=0.55)
+    assert "Python" in why

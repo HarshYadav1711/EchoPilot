@@ -14,6 +14,7 @@ def _analysis(conf: float) -> IntentAnalysis:
         confidence=conf,
         requires_confirmation=False,
         explanation_for_ui="test",
+        why_this_action="test",
         parse_warnings=[],
     )
 

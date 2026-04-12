@@ -25,7 +25,7 @@ def test_validate_requires_confirmation_string_coercion() -> None:
         "requires_confirmation": "true",
         "explanation_for_ui": "ok",
     }
-    _, _, _, _, req, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
+    _, _, _, _, req, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
     assert req is True
 
 
@@ -38,6 +38,6 @@ def test_validate_arguments_coerce_non_primitive() -> None:
         "requires_confirmation": False,
         "explanation_for_ui": "ok",
     }
-    _, _, args, _, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
+    _, _, args, _, _, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
     assert isinstance(args["nested"], str)
     assert "x" in args["nested"]

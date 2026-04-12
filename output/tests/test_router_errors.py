@@ -29,6 +29,7 @@ def test_execute_plan_returns_structured_failure_when_executor_raises() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="x",
+        why_this_action="x",
         parse_warnings=[],
     )
     router = IntentRouter()

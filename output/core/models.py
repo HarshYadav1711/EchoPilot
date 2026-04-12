@@ -80,6 +80,7 @@ class IntentAnalysis:
     """
     Validated structured output from the intent layer (Ollama JSON).
 
+    ``why_this_action`` is a concise, reviewer-facing rationale for the chosen intents.
     ``parse_warnings`` records recovery steps (e.g. invalid JSON repaired, confidence adjusted).
     """
 
@@ -88,7 +89,9 @@ class IntentAnalysis:
     arguments: Dict[str, Any]
     confidence: float
     requires_confirmation: bool
+    # One-line summary; ``why_this_action`` is the reviewer-facing rationale (1–2 lines).
     explanation_for_ui: str
+    why_this_action: str
     parse_warnings: List[str] = field(default_factory=list)
     raw_llm_text: Optional[str] = None
     # Simple two-clause "X and Y" compounds: raw segments for UI; per-step arg overrides for tools.

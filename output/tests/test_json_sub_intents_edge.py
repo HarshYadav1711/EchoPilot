@@ -15,7 +15,7 @@ def test_sub_intents_all_invalid_strings_use_primary() -> None:
         "requires_confirmation": False,
         "explanation_for_ui": "x",
     }
-    primary, subs, _, _, _, _, w = validate_intent_payload(raw, confidence_threshold=0.55)
+    primary, subs, _, _, _, _, _, w = validate_intent_payload(raw, confidence_threshold=0.55)
     assert primary == PrimaryIntent.SUMMARIZE
     assert subs == [PrimaryIntent.SUMMARIZE]
     assert "sub_intents_invalid_all_dropped" in w
@@ -30,5 +30,5 @@ def test_arguments_dict_capped_at_64_keys() -> None:
         "requires_confirmation": False,
         "explanation_for_ui": "x",
     }
-    _, _, args, _, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
+    _, _, args, _, _, _, _, _ = validate_intent_payload(raw, confidence_threshold=0.55)
     assert len(args) == 64

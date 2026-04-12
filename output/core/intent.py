@@ -57,10 +57,12 @@ Required JSON shape:
   "arguments": { },
   "confidence": <number from 0.0 to 1.0>,
   "requires_confirmation": <boolean>,
-  "explanation_for_ui": "<one short English sentence>"
+  "explanation_for_ui": "<one short English sentence — label for the choice>",
+  "why_this_action": "<1–2 short sentences in plain English: why these intents fit what the user asked. No system prompts or JSON talk.>"
 }
 
 Rules:
+- why_this_action must be readable by a non-technical reviewer (e.g. why write_code vs chat).
 - sub_intents is the ordered plan (first step first). For a single action use one element equal to primary_intent.
 - Compound examples:
   - Summarize text then save: sub_intents ["summarize","create_file"], arguments.path filename, arguments.text the source.
@@ -88,6 +90,7 @@ def _fallback_analysis(
         confidence=0.0,
         requires_confirmation=True,
         explanation_for_ui=_FALLBACK_EXPLANATION,
+        why_this_action="Intent could not be interpreted reliably, so the assistant will respond with general chat.",
         parse_warnings=[reason],
         raw_llm_text=raw_llm_text,
         compound_parts=[],
@@ -137,6 +140,13 @@ def _merge_compound_two(
             f"--- clause 1 ---\n{left.raw_llm_text or ''}\n"
             f"--- clause 2 ---\n{right.raw_llm_text or ''}"
         )
+    why = (
+        f"First part: {left.why_this_action or left.explanation_for_ui} "
+        f"Second part: {right.why_this_action or right.explanation_for_ui}"
+    )
+    if len(why) > 450:
+        why = why[:447] + "…"
+
     return IntentAnalysis(
         primary_intent=la,
         sub_intents=sub_intents,
@@ -144,6 +154,7 @@ def _merge_compound_two(
         confidence=confidence,
         requires_confirmation=requires_confirmation,
         explanation_for_ui=explanation[:2000],
+        why_this_action=why,
         parse_warnings=parse_warnings,
         raw_llm_text=raw,
         compound_parts=[left_text.strip(), right_text.strip()],
@@ -231,7 +242,7 @@ class IntentClassifier:
         if recovery == "recovered_from_embedded_json":
             parse_warnings.append("recovered_from_embedded_json")
 
-        primary, subs, args, conf, req, expl, val_warnings = validate_intent_payload(
+        primary, subs, args, conf, req, expl, why, val_warnings = validate_intent_payload(
             data,
             confidence_threshold=self._settings.intent_confidence_threshold,
         )
@@ -245,6 +256,7 @@ class IntentClassifier:
             confidence=conf,
             requires_confirmation=req,
             explanation_for_ui=expl,
+            why_this_action=why,
             parse_warnings=parse_warnings,
             raw_llm_text=str(raw)[:4000],
             compound_parts=[],

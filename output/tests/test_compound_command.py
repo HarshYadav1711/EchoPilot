@@ -38,6 +38,7 @@ def test_merge_compound_two_sub_intents_and_per_step_args() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="Summarize clause",
+        why_this_action="User asked to condense text.",
         parse_warnings=[],
     )
     right = IntentAnalysis(
@@ -47,6 +48,7 @@ def test_merge_compound_two_sub_intents_and_per_step_args() -> None:
         confidence=0.85,
         requires_confirmation=False,
         explanation_for_ui="Save file",
+        why_this_action="User asked to save output to a file.",
         parse_warnings=[],
     )
     m = _merge_compound_two("summarize this text", "save it to summary.txt", left, right)
@@ -56,6 +58,8 @@ def test_merge_compound_two_sub_intents_and_per_step_args() -> None:
     assert m.per_step_arguments[0]["text"] == "summarize this text"
     assert m.per_step_arguments[1]["path"] == "summary.txt"
     assert m.confidence == 0.85
+    assert "First part:" in m.why_this_action
+    assert "Second part:" in m.why_this_action
 
 
 def test_effective_arguments_for_step() -> None:
@@ -66,6 +70,7 @@ def test_effective_arguments_for_step() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="x",
+        why_this_action="x",
         parse_warnings=[],
         per_step_arguments=[{"text": "L"}, {"query": "R"}],
     )
@@ -87,6 +92,7 @@ def test_executor_passes_merged_arguments_per_step() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="x",
+        why_this_action="x",
         parse_warnings=[],
         per_step_arguments=[{"text": "first"}, {"query": "second"}],
     )

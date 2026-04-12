@@ -18,6 +18,7 @@ def test_execute_empty_plan() -> None:
         confidence=0.5,
         requires_confirmation=True,
         explanation_for_ui="x",
+        why_this_action="Test.",
         parse_warnings=[],
     )
     r = execute_action_plan(
@@ -41,6 +42,7 @@ def test_execute_partial_failure_via_mock() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="x",
+        why_this_action="Test.",
         parse_warnings=[],
     )
     plan = compile_action_plan(analysis)
@@ -72,6 +74,7 @@ def test_execute_blocked_confirmation_flag() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="x",
+        why_this_action="Test.",
         parse_warnings=[],
     )
     plan = compile_action_plan(analysis)
@@ -105,6 +108,7 @@ def test_dispatch_exception_in_execute_loop() -> None:
         confidence=0.9,
         requires_confirmation=False,
         explanation_for_ui="x",
+        why_this_action="Test.",
         parse_warnings=[],
     )
     plan = compile_action_plan(analysis)

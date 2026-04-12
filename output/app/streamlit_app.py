@@ -237,8 +237,9 @@ def main() -> None:
             ic1, ic2 = st.columns([3, 1])
             with ic1:
                 st.markdown("**Detected intent**")
-                st.write(an.explanation_for_ui)
                 st.caption(f"Primary: `{an.primary_intent.value}`")
+                st.markdown("**Why this action?**")
+                st.write(an.why_this_action or an.explanation_for_ui)
             with ic2:
                 bc = intent_confidence_status(an.confidence, _CONF_THRESHOLD)
                 render_badge(bc, f"Confidence {an.confidence:.0%}")
@@ -278,6 +279,8 @@ def main() -> None:
                     "sub_intents": [s.value for s in an.sub_intents],
                     "arguments": an.arguments,
                     "requires_confirmation": an.requires_confirmation,
+                    "explanation_for_ui": an.explanation_for_ui,
+                    "why_this_action": an.why_this_action,
                     "parse_warnings": an.parse_warnings,
                     "intent_degraded": an.intent_degraded,
                 }
