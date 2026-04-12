@@ -8,7 +8,7 @@ EchoPilot — spoken demo script (read naturally; pause between steps)
    Point out on screen: transcript, primary intent, confidence bar, ordered steps.
 
 3) Preview
-   Click "Generate preview (dry-run)". Confirm no files touched yet; read the preview text.
+   Click "Preview (dry-run)" (no extra checkboxes). Confirm nothing is written to disk; read the preview.
 
 4) Optional file write (only if your plan includes create_file or write_code)
    Say: "Create a file named demo_notes.txt with a single line hello world."

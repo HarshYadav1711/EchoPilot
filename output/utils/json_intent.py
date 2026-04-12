@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict, List, Tuple
 
 from core.models import PrimaryIntent
@@ -63,7 +62,8 @@ def parse_json_loose(text: str) -> Tuple[Dict[str, Any] | None, str | None]:
     """
     Try strict parse, then fenced strip, then first JSON object.
 
-    Returns (data, error_reason) where error_reason is set only if all fail.
+    Returns ``(data, tag)``. On success: ``tag`` is ``None`` or ``"recovered_from_embedded_json"``.
+    On failure: ``data`` is ``None`` and ``tag`` is ``"invalid_json"``.
     """
     raw = text.strip()
     for candidate in (raw, strip_code_fences(raw)):
@@ -118,7 +118,9 @@ def _coerce_arguments(val: Any) -> Dict[str, Any]:
     if not isinstance(val, dict):
         return {}
     safe: Dict[str, Any] = {}
-    for k, v in val.items():
+    for i, (k, v) in enumerate(val.items()):
+        if i >= 64:
+            break
         if not isinstance(k, str) or not k.strip():
             continue
         key = k.strip()[:128]
@@ -156,8 +158,12 @@ def validate_intent_payload(
         primary = PrimaryIntent.GENERAL_CHAT
         warnings.append("invalid_or_missing_primary_intent")
 
-    subs = _coerce_sub_intents(data.get("sub_intents"))
-    if not subs:
+    raw_sub = data.get("sub_intents")
+    subs = _coerce_sub_intents(raw_sub)
+    if isinstance(raw_sub, list) and len(raw_sub) > 0 and len(subs) == 0:
+        warnings.append("sub_intents_invalid_all_dropped")
+        subs = [primary]
+    elif not subs:
         subs = [primary]
         warnings.append("sub_intents_defaulted_to_primary")
 

@@ -9,13 +9,14 @@ from core.execution_context import ExecutionContext
 from core.models import IntentAnalysis, ToolResult
 from utils.file_sanitizer import resolve_flat_sandbox_file
 from utils.logger import get_logger
+from utils.safety import ensure_within_root
 
 logger = get_logger("tools.file_ops")
 
 _MAX_BYTES = 512_000
 
 
-def _params(intent: IntentAnalysis) -> dict:
+def _intent_arguments(intent: IntentAnalysis) -> dict:
     return intent.arguments
 
 
@@ -66,6 +67,13 @@ def write_text_under_sandbox(
             payload={"blocked": "confirmation"},
         )
 
+    root = get_settings().data_dir.resolve()
+    try:
+        ensure_within_root(path, root)
+    except ValueError as exc:
+        logger.warning("Write path rejected post-resolve: %s", exc)
+        return ToolResult(ok=False, message=str(exc), payload={"blocked": "path"})
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -90,7 +98,7 @@ def write_text_under_sandbox(
 
 def create_file(intent: IntentAnalysis, ctx: ExecutionContext) -> ToolResult:
     """Create a new file under the sandbox using validated filename and content."""
-    args = _params(intent)
+    args = _intent_arguments(intent)
     root = get_settings().data_dir.resolve()
     try:
         raw_name = args.get("path") or args.get("filename") or args.get("file")

@@ -44,7 +44,7 @@ class Settings:
     """Runtime configuration; extend for Whisper/Ollama without adding cloud deps."""
 
     project_root: Path = field(default_factory=_project_root)
-    # Writable sandbox for generated files and uploads (never outside project_root/output/output)
+    # Writable sandbox: ``project_root / "output"`` (see README); never escape this tree.
     data_dir: Path = field(init=False)
     # Ollama HTTP API (default local)
     ollama_host: str = field(default_factory=lambda: os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"))

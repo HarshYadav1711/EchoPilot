@@ -253,7 +253,7 @@ def main() -> None:
 
     # —— 3. Execution ——
     st.divider()
-    _section_header("3 · Execution", "Preview writes, confirm, then apply. All files stay under the sandbox.")
+    _section_header("3 · Execution", "Preview is always safe; Apply writes only after you confirm.")
     st.markdown('<div class="ep-card">', unsafe_allow_html=True)
 
     if pipeline is None:
@@ -268,33 +268,39 @@ def main() -> None:
         s.intent.value in ("create_file", "write_code") for s in pipeline.action_plan.steps
     )
     an = pipeline.intent_analysis
-    low_or_flagged = an.confidence < _CONF_THRESHOLD or an.requires_confirmation or bool(an.parse_warnings)
+    needs_human_review = (
+        an.confidence < _CONF_THRESHOLD
+        or an.requires_confirmation
+        or bool(an.parse_warnings)
+    )
 
-    st.caption(f"Sandbox: `{sandbox_root()}` · flat filenames · allowlisted extensions")
+    st.caption(
+        f"Sandbox root: `{sandbox_root()}` — flat filenames only; extensions allowlisted. "
+        "Flow: **Preview** (safe) → confirm if prompted → **Apply**."
+    )
 
-    if write_steps or low_or_flagged:
-        st.markdown("**Confirmation**")
-        if low_or_flagged:
+    if write_steps or needs_human_review:
+        st.markdown("**Review**")
+        if needs_human_review:
             st.warning(
-                "Low confidence and/or parser notes — review the plan before running tools."
+                "Confidence or parser flags need a quick review before you apply changes to disk."
             )
         if write_steps:
-            st.info("This plan may write files. Preview first, then confirm before applying to disk.")
+            st.info("File tools require preview or explicit write confirmation before Apply.")
 
         intent_ack = st.checkbox(
-            "I have reviewed the transcription, intent, and plan and want to run tools",
+            "I have reviewed the transcript, intent, and plan",
             value=st.session_state.get("ep_intent_ack", False),
             key="ep_intent_ack",
         )
     else:
         intent_ack = True
-        st.caption("No file writes in this plan — confirmation is light.")
 
     col_p, col_e = st.columns(2)
     with col_p:
-        preview = st.button("Generate preview (dry-run)", use_container_width=True, help="No disk writes; shows what would happen.")
+        preview = st.button("Preview (dry-run)", use_container_width=True, help="Runs tools without writing files.")
     with col_e:
-        apply_run = st.button("Apply plan (execute)", use_container_width=True, type="primary")
+        apply_run = st.button("Apply", use_container_width=True, type="primary", help="Writes only if the plan includes files and you confirmed.")
 
     st.checkbox(
         "I confirm writes inside the sandbox",
@@ -309,22 +315,19 @@ def main() -> None:
     )
 
     if preview:
-        if not (intent_ack if (write_steps or low_or_flagged) else True):
-            st.error("Check the confirmation box above before running tools.")
-        else:
-            ex = _ROUTER.execute_plan(
-                pipeline.action_plan,
-                pipeline.intent_analysis,
-                user_utterance=pipeline.transcription.text,
-                transcription_text=pipeline.transcription.text,
-                dry_run=True,
-                confirm_writes=False,
-                allow_overwrite=bool(st.session_state.get("ep_allow_overwrite", False)),
-            )
-            st.session_state["ep_last_preview"] = ex
-            kind, label = execution_status_badge(ex.execution_status)
-            append_timeline("Preview (dry-run)", label, status=kind, phase="execution")
-            st.rerun()
+        ex = _ROUTER.execute_plan(
+            pipeline.action_plan,
+            pipeline.intent_analysis,
+            user_utterance=pipeline.transcription.text,
+            transcription_text=pipeline.transcription.text,
+            dry_run=True,
+            confirm_writes=False,
+            allow_overwrite=bool(st.session_state.get("ep_allow_overwrite", False)),
+        )
+        st.session_state["ep_last_preview"] = ex
+        kind, label = execution_status_badge(ex.execution_status)
+        append_timeline("Preview (dry-run)", label, status=kind, phase="execution")
+        st.rerun()
 
     preview_ex = st.session_state.get("ep_last_preview")
     if preview_ex is not None:
@@ -347,8 +350,8 @@ def main() -> None:
             )
 
     if apply_run:
-        if not (intent_ack if (write_steps or low_or_flagged) else True):
-            st.error("Confirm that you reviewed the plan before applying.")
+        if not (intent_ack if (write_steps or needs_human_review) else True):
+            st.error("Check the review checkbox above before applying.")
         elif not write_apply_allowed(write_steps, bool(st.session_state.get("ep_confirm_writes", False))):
             st.error("Non–dry-run file writes require “I confirm writes”.")
         else:

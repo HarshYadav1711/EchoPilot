@@ -80,7 +80,11 @@ class IntentClassifier:
                 logger.warning("Ollama returned empty content")
                 return _fallback_analysis("empty_ollama_response")
         except Exception as exc:
-            logger.warning("Ollama intent call failed: %s", exc)
+            logger.warning(
+                "Ollama intent call failed: %s: %s",
+                exc.__class__.__name__,
+                exc,
+            )
             return _fallback_analysis(f"ollama_error:{exc.__class__.__name__}")
 
         data, recovery = parse_json_loose(str(raw))

@@ -25,6 +25,7 @@ def configure_logging(level: int = logging.INFO, name: str = "echopilot") -> log
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:
     """Return a child logger under the EchoPilot namespace."""
+    configure_logging()
     base = "echopilot"
     full = f"{base}.{name}" if name else base
     return logging.getLogger(full)
