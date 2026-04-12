@@ -26,10 +26,10 @@ from app.ui_helpers import (  # noqa: E402
     render_badge,
     reset_ep_session,
     transcription_badge,
+    write_apply_allowed,
 )
 from core.config import get_settings  # noqa: E402
 from core.intent import IntentClassifier  # noqa: E402
-from core.memory import SessionMemory  # noqa: E402
 from core.models import PipelineResult, TranscriptionSource  # noqa: E402
 from core.router import IntentRouter  # noqa: E402
 from core.stt import SpeechTranscriber  # noqa: E402
@@ -40,7 +40,6 @@ _SETTINGS = get_settings()
 _TRANSCRIBER = SpeechTranscriber(_SETTINGS)
 _CLASSIFIER = IntentClassifier(_SETTINGS)
 _ROUTER = IntentRouter()
-_MEMORY = SessionMemory()
 _CONF_THRESHOLD = _SETTINGS.intent_confidence_threshold
 
 
@@ -371,7 +370,6 @@ def main() -> None:
                 execution=execution,
             )
             st.session_state["echo_pipeline"] = updated
-            _MEMORY.append(updated)
             ek, el = execution_status_badge(execution.execution_status)
             append_timeline("Execution finished", el, status=ek, phase="execution")
             st.rerun()
@@ -405,13 +403,6 @@ def main() -> None:
 
     _footer_timeline()
     st.markdown("</div>", unsafe_allow_html=True)
-
-
-def write_apply_allowed(write_steps: bool, confirm_writes: bool) -> bool:
-    """Disk writes require an explicit checkbox when the plan includes file tools."""
-    if not write_steps:
-        return True
-    return confirm_writes
 
 
 def _footer_timeline() -> None:

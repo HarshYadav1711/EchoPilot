@@ -1,0 +1,23 @@
+EchoPilot — spoken demo script (read naturally; pause between steps)
+
+1) Transcription
+   "Summarize the benefits of local speech processing in one paragraph."
+   (Or upload a short WAV/MP3 instead of speaking.)
+
+2) Intent + plan
+   Point out on screen: transcript, primary intent, confidence bar, ordered steps.
+
+3) Preview
+   Click "Generate preview (dry-run)". Confirm no files touched yet; read the preview text.
+
+4) Optional file write (only if your plan includes create_file or write_code)
+   Say: "Create a file named demo_notes.txt with a single line hello world."
+   Re-run transcription & intent, preview again, then check "I confirm writes" and apply.
+
+5) Wrap-up
+   Mention: sandbox path on disk, session reset, and that Ollama must be running for intent and tools.
+
+Suggested one-liners for quick tests (say clearly):
+- "What is two plus two?"  → general_chat
+- "Summarize this conversation."  → summarize (uses transcript context)
+- "Write Python code for a retry decorator and save it as retry_demo.py."  → write_code + sandbox write (after confirmation)

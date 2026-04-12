@@ -1,1 +1,1 @@
-"""Core domain: configuration, models, STT, intent, routing, memory."""
+"""Core domain: configuration, models, STT, intent, routing, execution."""

@@ -109,10 +109,6 @@ def append_timeline(
     st.session_state.ep_timeline = st.session_state.ep_timeline[-MAX_TIMELINE:]
 
 
-def clear_timeline() -> None:
-    st.session_state.ep_timeline = []
-
-
 def reset_ep_session() -> None:
     """Clear pipeline and timeline; keep widget keys minimal."""
     for key in (
@@ -135,3 +131,10 @@ def intent_confidence_status(confidence: float, threshold: float) -> TimelineSta
     if confidence >= threshold * 0.7:
         return "warning"
     return "failure"
+
+
+def write_apply_allowed(write_steps: bool, confirm_writes: bool) -> bool:
+    """Disk writes require an explicit checkbox when the plan includes file tools."""
+    if not write_steps:
+        return True
+    return confirm_writes

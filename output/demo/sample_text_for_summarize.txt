@@ -1,0 +1,5 @@
+EchoPilot is a local voice assistant demo. It records or accepts audio, transcribes with faster-whisper, classifies intent with Ollama using JSON-only outputs, and runs a fixed set of tools inside a single writable directory. Network calls are limited to the Ollama HTTP endpoint on your machine; there is no vendor API key and no cloud STT.
+
+The design prioritizes predictable behavior: paths are validated before any write, dry-run previews precede disk changes, and the UI separates input, reasoning, and execution. This file is safe to use as pasted or uploaded text when testing the summarize tool without audio.
+
+For file-creation demos, keep filenames simple and under the sandbox root only—for example demo_notes.txt with a short body. The application rejects executables, traversal segments, and paths that leave the configured output directory.
