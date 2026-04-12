@@ -91,8 +91,8 @@ def execution_status_badge(status: str) -> tuple[TimelineStatus, str]:
 
 def append_timeline(
     label: str,
-    *,
     detail: str = "",
+    *,
     status: TimelineStatus = "neutral",
     phase: str = "",
 ) -> None:
