@@ -119,6 +119,13 @@ def reset_ep_session() -> None:
         "ep_last_preview",
         "ep_raw_intent_open",
         "last_stt",
+        "ep_intent_ack",
+        "ep_confirm_writes",
+        "ep_allow_overwrite",
+        # Widget state (must clear or Streamlit keeps mic/upload/transcript visible after "reset")
+        "tx_display",
+        "ep_audio_input",
+        "ep_upload",
     ):
         st.session_state.pop(key, None)
 

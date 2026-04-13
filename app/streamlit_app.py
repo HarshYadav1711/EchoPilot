@@ -46,6 +46,11 @@ _CONF_THRESHOLD = _SETTINGS.intent_confidence_threshold
 _EXEC_CONF_THRESHOLD = _SETTINGS.execution_confidence_threshold
 
 
+def _on_reset_session_click() -> None:
+    """Callback: Streamlit reruns the app after this (more reliable than if-button + st.rerun())."""
+    reset_ep_session()
+
+
 def _empty_card(message: str) -> None:
     st.markdown(f'<p class="ep-muted">{message}</p>', unsafe_allow_html=True)
 
@@ -68,16 +73,13 @@ def main() -> None:
         st.title("EchoPilot")
         st.caption("Local pipeline: audio → transcript → intent → plan → safe execution")
     with h2:
-        if st.button("Reset session", use_container_width=True, help="Clear transcript, plan, previews, and timeline"):
-            reset_ep_session()
-            for k in (
-                "ep_intent_ack",
-                "ep_confirm_writes",
-                "ep_allow_overwrite",
-                "ep_await_exec_low_conf",
-            ):
-                st.session_state.pop(k, None)
-            st.rerun()
+        st.button(
+            "Reset session",
+            on_click=_on_reset_session_click,
+            use_container_width=True,
+            key="ep_reset_session",
+            help="Clear transcript, plan, previews, and timeline",
+        )
 
     # —— 1. Input ——
     _section_header("1 · Input", "Microphone or file — audio never leaves your machine for STT.")
@@ -85,12 +87,17 @@ def main() -> None:
         st.markdown('<div class="ep-card">', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
-            mic_audio = st.audio_input("Microphone", label_visibility="visible")
+            mic_audio = st.audio_input(
+                "Microphone",
+                label_visibility="visible",
+                key="ep_audio_input",
+            )
         with c2:
             uploaded = st.file_uploader(
                 "Upload audio",
                 type=["wav", "mp3", "m4a", "webm", "ogg", "flac", "aac"],
                 help="Processed only inside the project sandbox.",
+                key="ep_upload",
             )
         run = st.button("Run transcription & intent", type="primary", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
