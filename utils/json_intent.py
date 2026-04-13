@@ -179,6 +179,12 @@ def validate_intent_payload(
         subs = [primary]
         warnings.append("sub_intents_defaulted_to_primary")
 
+    # Single-step plans must execute primary_intent; models sometimes emit mismatched pairs
+    # (e.g. primary general_chat + sub_intents ["summarize"]). Coerce to avoid wrong tools.
+    if len(subs) == 1 and subs[0] != primary:
+        warnings.append("sub_intents_coerced_to_match_primary")
+        subs = [primary]
+
     args = _coerce_arguments(data.get("arguments"))
     conf = _clamp_confidence(data.get("confidence", 0.5))
 

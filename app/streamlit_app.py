@@ -276,6 +276,7 @@ def main() -> None:
 
             with st.expander("Technical details (intent JSON)", expanded=False):
                 detail: dict = {
+                    "primary_intent": an.primary_intent.value,
                     "sub_intents": [s.value for s in an.sub_intents],
                     "arguments": an.arguments,
                     "requires_confirmation": an.requires_confirmation,

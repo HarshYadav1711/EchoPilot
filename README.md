@@ -83,11 +83,14 @@ This design is inspired by modern memory-layer systems used in real-world AI app
 
 ## Setup
 
+**Ollama must be running** before you use intent / chat tools. Install from [ollama.com](https://ollama.com/), start the Ollama app (Windows: it stays in the system tray), or run `ollama serve` in another terminal. Pull a model that matches `OLLAMA_MODEL` (default `llama3.2`), e.g. `ollama pull llama3.2`.
+
 ```bash
 git clone https://github.com/HarshYadav1711/EchoPilot
 cd EchoPilot
+python -m venv .venv
+# Windows: .\.venv\Scripts\activate   |  Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
-ollama run llama3
 streamlit run app/streamlit_app.py
 ```
 

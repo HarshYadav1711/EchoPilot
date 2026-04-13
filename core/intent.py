@@ -63,7 +63,8 @@ Required JSON shape:
 
 Rules:
 - why_this_action must be readable by a non-technical reviewer (e.g. why write_code vs chat).
-- sub_intents is the ordered plan (first step first). For a single action use one element equal to primary_intent.
+- sub_intents is the ordered plan (first step first). For a single action use exactly one element and it MUST equal primary_intent (never e.g. primary general_chat with sub_intents ["summarize"]).
+- Questions and trivia → general_chat. Use summarize only when the user asks to condense or shorten supplied text; do not use summarize just because an answer is short.
 - Compound examples:
   - Summarize text then save: sub_intents ["summarize","create_file"], arguments.path filename, arguments.text the source.
   - New Python file with retry logic: sub_intents ["create_file","write_code"] or ["write_code"] if only coding; set arguments.path and arguments.language "python" when known.
@@ -223,6 +224,22 @@ class IntentClassifier:
                     "empty_ollama_response",
                     user_notice="Intent parsing failed, falling back to chat.",
                 )
+        except ConnectionError as exc:
+            # Expected when Ollama is stopped or OLLAMA_HOST is wrong — avoid noisy tracebacks in logs.
+            logger.warning(
+                "Ollama unreachable for intent at %s: %s",
+                self._settings.ollama_host,
+                exc,
+            )
+            m = self._settings.ollama_model
+            return _fallback_analysis(
+                f"ollama_connection:{exc.__class__.__name__}",
+                user_notice=(
+                    f"Could not connect to Ollama at {self._settings.ollama_host}. "
+                    f"Start the Ollama application (Windows: system tray) or run `ollama serve`, "
+                    f"then ensure the model is pulled (e.g. `ollama pull {m}`)."
+                ),
+            )
         except Exception as exc:
             logger.exception("Ollama intent call failed")
             return _fallback_analysis(

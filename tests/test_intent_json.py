@@ -58,6 +58,23 @@ def test_validate_compound_sub_intents() -> None:
     assert [s.value for s in subs] == ["summarize", "create_file"]
 
 
+def test_validate_single_sub_mismatches_primary_is_coerced() -> None:
+    """LLMs sometimes emit primary general_chat with sub_intents ['summarize']; single step must match primary."""
+    raw = {
+        "primary_intent": "general_chat",
+        "sub_intents": ["summarize"],
+        "arguments": {},
+        "confidence": 1.0,
+        "requires_confirmation": False,
+        "explanation_for_ui": "Answer to your question",
+        "why_this_action": "User asked a question.",
+    }
+    primary, subs, _, _, _, _, _, w = validate_intent_payload(raw, confidence_threshold=0.55)
+    assert primary == PrimaryIntent.GENERAL_CHAT
+    assert subs == [PrimaryIntent.GENERAL_CHAT]
+    assert "sub_intents_coerced_to_match_primary" in w
+
+
 def test_compile_action_plan_order() -> None:
     analysis = IntentAnalysis(
         primary_intent=PrimaryIntent.SUMMARIZE,
